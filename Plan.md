@@ -1,893 +1,555 @@
-```markdown
-# SehatKosh Master Implementation Blueprint (`plan.md`)
-**Target Release:** v1.0.0-rc  
-**Architecture Classification:** HL7 FHIR R4 Compliant Distributed Health Record System  
-**Maintainers:** Lead Systems Architect & Clinical Informatics Core  
+# SehatKosh Donor Web: Architectural & Deployment Plan
+
+A standalone, zero-cost, high-resilience web application designed for mobile clinicians to donate prescription scans and transcriptions to the SehatKosh research corpus.
 
 ---
 
-## 1. System Architecture & Monorepo Topology
+## 1. System Architecture & Repository Boundaries
 
-The platform operates as an enterprise monorepo driven by **Turborepo** and **pnpm workspaces**. It enforces strict boundary isolation between mobile clients, clinical web portals, core domain packages, and backend microservices.
+### Standalone Repository Isolation
 
-### 1.1 Directory Structure
+The portal is hosted in an isolated repository (`sehatkosh-donor-web`) outside the main SehatKosh monorepo.
 
-```tree
-sehatkosh/
-├── .npmrc
-├── package.json
-├── turbo.json
-├── pnpm-workspace.yaml
-├── apps/
-│   ├── mobile/                     # React Native Expo SDK (Patient Portal)
-│   │   ├── app/                    # Expo Router file-based routes
-│   │   ├── components/             # Reusables, primitives, and domain widgets
-│   │   ├── hooks/                  # TanStack Query & sensor hooks
-│   │   ├── tailwind.config.js      # NativeWind v4 + Tailwind v3.4.x binding
-│   │   └── package.json
-│   └── doctor-web/                 # Next.js 14 App Router (Multi-Role Portal)
-│       ├── app/                    # (admin, doctor, registrar, hospital-admin)
-│       ├── components/             # Radix primitives, charts, clinical viewer
-│       ├── hooks/                  # TanStack Query and WebSocket bridges
-│       ├── tailwind.config.ts      # Tailwind CSS v3.4.x
-│       └── package.json
-├── packages/
-│   ├── types/                      # Canonical FHIR R4 interfaces & DTO schemas
-│   ├── mock-data/                  # Synthetic fixtures & async network mocks
-│   └── tailwind-config/            # Shared clinical color tokens & theme presets
-├── services/
-│   └── backend/                    # FastAPI Modular Monolith (Python 3.11+)
-│       ├── app/
-│       │   ├── api/                # v1 Routers (auth, fhir, ingest, audit)
-│       │   ├── core/               # Config, security, database session
-│       │   ├── models/             # SQLAlchemy 2.0 Async PG models
-│       │   ├── schemas/            # Pydantic v2 FHIR models
-│       │   └── services/           # OCR parser, Neo4j contraindication graph
-│       ├── requirements.txt
-│       └── Dockerfile
-└── infra/
-    └── docker/
-        ├── docker-compose.yml       # PG 16, Neo4j 5, LocalStack
-        └── init-s3.sh               # LocalStack S3 bucket provisioning
+* **Blast Radius Containment:** The main SehatKosh repository manages authenticated clinical workflows, patient EHR records, and FHIR R4 pipelines. This donation portal accepts unauthenticated public uploads. Full physical isolation prevents cross-contamination of access tokens, dependencies, and deployment pipelines.
+* **Payload & Runtime Footprint:** Zero Node.js runtime, zero server hydration. A compiled static client ensures sub-500ms initial load times over volatile 3G/4G cellular connections.
+
+### Ingestion Sequence
 
 ```
-
-### 1.2 Package Resolution Locks
-
-#### `.npmrc`
-
-Enforces hoisting behavior required by Metro Bundler to prevent duplicate React runtime instances and symbolic link resolution failures in Expo.
-
-```ini
-shamefully-hoist=true
-strict-peer-dependencies=false
-auto-install-peers=true
-
-```
-
-#### `pnpm-workspace.yaml`
-
-```yaml
-packages:
-  - 'apps/*'
-  - 'packages/*'
-
-```
-
-#### `turbo.json`
-
-```json
-{
-  "$schema": "[https://turbo.build/schema.json](https://turbo.build/schema.json)",
-  "globalDependencies": [".env"],
-  "tasks": {
-    "build": {
-      "dependsOn": ["^build"],
-      "outputs": [".next/**", "!.next/cache/**", "dist/**"]
-    },
-    "lint": {
-      "dependsOn": ["^lint"]
-    },
-    "dev": {
-      "cache": false,
-      "persistent": true
-    }
-  }
-}
+[Mobile Client (Browser)]
+       │
+       │ 1. POST /session { file_mime, file_size, client_timestamp }
+       ▼
+[AWS API Gateway (HTTP API v2)]
+       │
+       ▼
+[AWS Lambda: Session & Pre-Signer]
+       ├── Validate request quotas & generate ULID (donation_id)
+       ├── Generate DynamoDB record (Status: PENDING_UPLOAD)
+       └── Mint AWS S3 Pre-Signed PUT URL (Restricted to Key & Content-Length)
+       │
+       │ 2. Return { donation_id, upload_url, s3_key }
+       ▼
+[Mobile Client (Browser)]
+       │
+       │ 3. Direct Binary HTTP PUT to S3 (Progress Tracking)
+       ▼
+[Amazon S3 Bucket (raw-intake/)]
+       │
+       │ 4. POST /commit { donation_id, transcription_text }
+       ▼
+[AWS API Gateway] ──► [AWS Lambda: Commit & Sanitize]
+                            ├── Verify S3 Object Existence & Magic Bytes
+                            ├── Strip EXIF, Normalize Image (Pillow to WebP)
+                            ├── Sanitize & Scrub PII from Text
+                            ├── Capture CloudFront Geo-Headers (Anonymize IP)
+                            ├── Commit to Amazon S3 (sanitized-archive/)
+                            └── Update DynamoDB record (Status: VERIFIED)
 
 ```
 
 ---
 
-## 2. Shared Packages Specification
+## 2. Frontend Architecture (Mobile-First Vanilla Stack)
 
-### 2.1 `@sehatkosh/types`
+### Technology Selection
 
-Houses standardized data transfer objects, TypeScript interfaces for HL7 FHIR R4 resources, and system-wide enums.
+* **Build Engine:** Vite (vanilla TypeScript template) producing a single minified bundle.
+* **Styling:** Tailwind CSS v3.4.x configured with JIT mode.
+* **Icons:** Lucide static SVGs (inline, zero runtime library dependencies).
+* **Storage Engine:** Browser `IndexedDB` via `idb-keyval` for persistent offline queueing.
+
+### UI/UX State Machine
+
+The client operates on a linear 4-state engine:
+
+```
+[IDLE / READY] ──► [CAPTURING / DRAFTING] ──► [UPLOADING (Progress %)] ──► [CONFIRMED]
+       ▲                                               │                       │
+       │                                               ▼                       │
+       └────────────────── [NETWORK ERROR: RETRY / QUEUED] ────────────────────┘
+
+```
+
+### Viewport & Mobile Ergonomics
+
+* Dynamic viewport sizing: Root wrapper uses `min-h-[100dvh]` to eliminate mobile address-bar displacement bugs.
+* Hardware camera bindings: Direct trigger to native camera hardware:
+```html
+<input 
+  type="file" 
+  id="prescription-camera" 
+  accept="image/jpeg,image/png,image/webp" 
+  capture="environment" 
+  class="sr-only"
+/>
+
+```
+
+
+* Touch targets: All action triggers enforce a minimum bounding box of `48px x 48px`.
+* Transcription boundary: Client-side dynamic character limit tracking (10 to 4,000 characters) with real-time visual decrement.
+
+---
+
+## 3. Network Resilience & Offline Engine
+
+### Background Queue with IndexedDB
+
+Prescription scans uploaded in clinical basements or rural centers will experience frequent socket drops. The client guarantees zero data loss via local persistence.
 
 ```typescript
-// packages/types/src/fhir.ts
-
-export type FHIRResourceType = 
-  | 'Patient' 
-  | 'MedicationRequest' 
-  | 'Observation' 
-  | 'DiagnosticReport' 
-  | 'Consent';
-
-export interface Coding {
-  system: '[http://snomed.info/sct](http://snomed.info/sct)' | '[http://loinc.org](http://loinc.org)' | '[http://unitsofmeasure.org](http://unitsofmeasure.org)' | string;
-  code: string;
-  display: string;
-}
-
-export interface CodeableConcept {
-  coding?: Coding[];
-  text: string; // Mandatory: Preserves unmapped local Pakistani brand names
-}
-
-export interface FHIRMedicationRequest {
-  resourceType: 'MedicationRequest';
-  id: string;
-  status: 'active' | 'completed' | 'cancelled' | 'entered-in-error';
-  intent: 'order';
-  medicationCodeableConcept: CodeableConcept;
-  subject: { reference: string; display: string };
-  authoredOn: string; // ISO 8601
-  dosageInstruction: Array<{
-    text: string;
-    timing?: { code?: { text: string } };
-    route?: CodeableConcept;
-    doseAndRate?: Array<{
-      doseQuantity?: { value: number; unit: string; system: string; code: string };
-    }>;
-  }>;
-}
-
-export interface FHIRObservation {
-  resourceType: 'Observation';
-  id: string;
-  status: 'final';
-  category: Array<{ coding: Coding[] }>;
-  code: CodeableConcept;
-  subject: { reference: string };
-  effectiveDateTime: string;
-  valueQuantity?: {
-    value: number;
-    unit: string;
-    system: '[http://unitsofmeasure.org](http://unitsofmeasure.org)';
-    code: string;
-  };
-  interpretation?: Array<CodeableConcept>;
-}
-
-export interface FHIRConsent {
-  resourceType: 'Consent';
-  id: string;
-  status: 'active' | 'inactive';
-  scope: { coding: Coding[] };
-  category: Array<{ coding: Coding[] }>;
-  patient: { reference: string };
-  provision: {
-    period: { start: string; end: string };
-    actor: Array<{ role: CodeableConcept; reference: { reference: string } }>;
-  };
+// Core schema for local donation buffer
+interface QueuedDonation {
+  localId: string;
+  imageBlob: Blob;
+  mimeType: string;
+  transcription: string;
+  timestamp: number;
+  retryCount: number;
 }
 
 ```
 
-### 2.2 `@sehatkosh/tailwind-config`
+### Upload Handshake
 
-Shared design tokens ensuring visual parity across mobile and web platforms.
-
-```javascript
-// packages/tailwind-config/index.js
-module.exports = {
-  theme: {
-    extend: {
-      colors: {
-        clinical: {
-          50: '#F0FDF4',
-          100: '#DCFCE7',
-          500: '#10B981',
-          700: '#047857',
-          900: '#064E3B',
-        },
-        danger: {
-          50: '#FEF2F2',
-          500: '#EF4444',
-          700: '#B91C1C',
-          900: '#7F1D1D',
-        },
-        surface: {
-          base: '#FFFFFF',
-          subtle: '#F8FAFC',
-          card: '#FFFFFF',
-          border: '#E2E8F0',
-        }
-      },
-      fontFamily: {
-        mono: ['JetBrains Mono', 'monospace'],
-        sans: ['Inter', 'system-ui', 'sans-serif'],
-      }
-    }
+1. **Pre-Flight Connection Check:** Client evaluates `navigator.onLine`. If offline, writes the raw record to `IndexedDB` and elevates a warning badge: *"No connection. Record saved locally."*
+2. **Chunked / Tracked Upload:** Bypasses `fetch()` for image transfers in favor of `XMLHttpRequest` to expose granular progress events:
+```typescript
+xhr.upload.onprogress = (event) => {
+  if (event.lengthComputable) {
+    const percent = Math.round((event.loaded / event.total) * 100);
+    updateProgressBar(percent);
   }
 };
 
 ```
 
+
+3. **Automatic Reconnection Worker:** Listens to `window.addEventListener('online')`. Automatically flushes pending records through an exponential backoff sequence ($2^n \times 1000\text{ms}$).
+
 ---
 
-## 3. Mobile Client Architecture (`apps/mobile`)
+## 4. Security, Sanitization & Input Hardening
 
-### 3.1 Layout & Display Calibrations
+### Image Ingestion Defense (Lambda Processing)
+
+* **Magic Byte Verification:** The backend strictly inspects file headers before processing:
+* JPEG: `FF D8 FF`
+* PNG: `89 50 4E 47`
+* WebP: `52 49 46 46` ... `57 45 42 50`
+* Any mismatch immediately flags the record as `QUARANTINED` and halts processing.
+
+
+* **Binary Re-encoding:** Uploaded images are passed through Pillow (`PIL.Image`). The pipeline decodes the raw bitmap, strips all EXIF metadata tags (GPS, camera serials, timestamps), and re-encodes the image to a standardized WebP format at 85% quality.
+* **Payload Constraints:** Strict 10 MB maximum limit enforced at the API Gateway and S3 bucket policy levels.
+
+### Text Ingestion Defense & PHI De-Identification
+
+* **Injection Defense:** Text payloads are handled strictly as inert data bindings. Direct DOM rendering enforces string escaping to prevent XSS.
+* **Pattern-Based PII Scrubbing:** Regex pass scrubs identifiable Pakistani citizen indicators before saving:
+```python
+import re
+
+def scrub_pii(raw_text: str) -> str:
+  # Scrub Pakistani CNIC (13 digits: XXXXX-XXXXXXX-X or without dashes)
+  text = re.sub(r'\b\d{5}[-]?\d{7}[-]?\d{1}\b', '[REDACTED_CNIC]', raw_text)
+
+  # Scrub Pakistani Mobile Numbers (03xx-xxxxxxx / +923xxxxxxxxx)
+  text = re.sub(r'(\+92|0)?3\d{2}[-\s]?\d{7}\b', '[REDACTED_PHONE]', text)
+
+  # Scrub Common Direct Clinician Identifiers
+  text = re.sub(r'(?i)\b(dr|doctor|patient|mr|mrs|ms)\.?\s+[a-zA-Z]+', '[REDACTED_NAME]', text)
+
+  return text.strip()
+
+```
+
+
+* **LLM Boundary Protection:** Stored transcription records are encapsulated in custom delimiters (`<donor_transcription>` ... `</donor_transcription>`) to prevent downstream prompt injection attacks when ingested by SehatKosh training pipelines.
+
+---
+
+## 5. Geolocation & Privacy Architecture
+
+### Edge Ingestion Telemetry
+
+Do not call third-party IP address lookup APIs. Instead, derive edge telemetry directly from CloudFront Viewer headers:
+
+* `CloudFront-Viewer-Country`
+* `CloudFront-Viewer-City-Name`
+* `CloudFront-Viewer-Postal-Code`
+
+### Privacy Compliance (Zero Raw-IP Retention)
+
+Storing raw IP addresses creates compliance liability under GDPR and health privacy frameworks.
+
+1. **Ephemeral Rate-Limiting:** Compute `HMAC-SHA256(Client_IP, Daily_Rotating_Salt)`. The resulting hash acts as the bucket key for rate limiting (max 10 donations/hour per hash).
+2. **Storage Anonymization:** Raw IP strings are immediately dropped. The DynamoDB record stores only the edge-derived City and Country alongside the one-way hashed identifier.
+
+---
+
+## 6. Data Storage & Schema Design
+
+### Amazon DynamoDB Schema
+
+* **Table Name:** `sehatkosh-donations`
+* **Billing Mode:** On-Demand (Free Tier eligible)
+* **Primary Key:** Partition Key `PK` = `DONATION#<ULID>`
+
+| Attribute | Type | Description |
+| --- | --- | --- |
+| `PK` | String | `DONATION#01JC8ZP7Q4MW5X...` |
+| `donation_id` | String | Sortable ULID |
+| `status` | String | `PENDING_UPLOAD` | `VERIFIED` | `QUARANTINED` |
+| `created_at` | String | ISO8601 UTC timestamp |
+| `s3_raw_key` | String | S3 pointer in `raw-intake/` |
+| `s3_sanitized_key` | String | S3 pointer in `sanitized-archive/` |
+| `transcription_raw` | String | Scrubbed, inert text payload |
+| `char_count` | Number | Character length of transcription |
+| `geo_country` | String | ISO country code from CloudFront |
+| `geo_city` | String | City name from CloudFront |
+| `ip_fingerprint` | String | Truncated one-way SHA-256 hash |
+| `image_dimensions` | String | Output dimensions (e.g., `1920x1080`) |
+| `file_size_bytes` | Number | Final file size in bytes |
+
+### Amazon S3 Bucket Architecture
+
+* **Bucket Name:** `sehatkosh-donor-storage`
+* **Access Configuration:** Block All Public Access = `True`
+* **Encryption:** Server-Side Encryption with Amazon S3 managed keys (`SSE-S3`)
+* **Prefix Structure:**
+* `raw-intake/{donation_id}.tmp`: Temporary buffer for client PUT operations. Lifecycle rule deletes aborted or uncommitted files after 24 hours.
+* `sanitized-archive/{year}/{month}/{donation_id}.webp`: Permanent storage of verified, sanitized images.
+
+
+
+---
+
+## 7. Zero-Cost Infrastructure (AWS Free Tier Ledger)
+
+All infrastructure components operate entirely within the AWS Free Tier allowances.
 
 ```
 ┌────────────────────────────────────────────────────────┐
-│ Top Inset Clearance: Math.max(insets.top, 16) + 8px   │
-├────────────────────────────────────────────────────────┤
-│                                                        │
-│                    MAIN SCROLL VIEW                    │
-│                                                        │
-├────────────────────────────────────────────────────────┤
-│ Chat Input Bar (Max 5 lines, flex-grow)                │
-├────────────────────────────────────────────────────────┤
-│ Resting Clearance: Flush against tab bar (8px gap)     │
-├────────────────────────────────────────────────────────┤
-│ Bottom Tab Bar (~65px)                                 │
-└────────────────────────────────────────────────────────┘
+│                      CloudFront                        │
+│            1 TB/mo Data Transfer (Always Free)         │
+└───────────┬────────────────────────────────┬───────────┘
+            │                                │
+     Static Assets                     /api/* Routes
+            │                                │
+            ▼                                ▼
+┌───────────────────────┐        ┌───────────────────────┐
+│       Amazon S3       │        │  API Gateway (HTTP)   │
+│   (Static Web Assets) │        │  1M calls/mo (12 mo)  │
+└───────────────────────┘        └───────────┬───────────┘
+                                             │
+                                             ▼
+                                 ┌───────────────────────┐
+                                 │   AWS Lambda (ARM64)  │
+                                 │ 1M requests/mo (Free) │
+                                 └─────┬───────────┬─────┘
+                                       │           │
+                                       ▼           ▼
+                      ┌──────────────────┐       ┌──────────────────┐
+                      │    Amazon S3     │       │ Amazon DynamoDB  │
+                      │ (Private Data)   │       │ 25 GB NoSQL      │
+                      │ 5 GB/mo (12 mo)  │       │ (Always Free)    │
+                      └──────────────────┘       └──────────────────┘
 
 ```
 
-#### Safe Area Calculation
-
-Dynamic island and status bar overlap is systematically resolved at the root container:
-
-```typescript
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
-
-export function ScreenWrapper({ children }: { children: React.ReactNode }) {
-  const insets = useSafeAreaInsets();
-  const calculatedTop = Math.max(insets.top, 16) + 8;
-
-  return (
-    <View 1, calculatedTop className="bg-surface-subtle" flex: paddingTop: style="{{" }}>
-      {children}
-    </View>
-  );
-}
-
-```
-
-#### Keyboard Avoidance Mechanics
-
-* **iOS:** Enforce `behavior="padding"` with `keyboardVerticalOffset` calibrated to bottom tab bar height (65px) to prevent over-elevation.
-* **Android:** Enforce `behavior={undefined}`. Let the Android window manager resize the layout natively without injecting phantom height increments.
-
-```tsx
-<KeyboardAvoidingView 'ios' 'padding' 0} 1 65 : ? behavior="{Platform.OS" flex: keyboardVerticalOffset="{Platform.OS" style="{{" undefined} }}>
-  {/* Chat/Intake container */}
-</KeyboardAvoidingView>
-
-```
-
-#### Assistant Suggestions Dismissal
-
-* Position suggestion pills inside `ListHeaderComponent` above the message list.
-* Hook visibility to `messages.length === 0`.
-* Dismiss suggestions automatically on first prompt submission or chip click.
-
-### 3.2 Clinical Intake Pipeline
-
-```
-[Center '+' FAB] 
-       │
-       ▼
-[Consultation Logging] ───► Symptoms, Doctor Info, Audio Scribe
-       │
-       ▼
-[Document Capture] ────────► Bottom Shutter Controls
-       │
-       ▼
-[Feedback Modal] ──────────► 2.2s Deterministic Sequence (Progressive States)
-       │
-       ▼
-[Split Verification] ─────► 40% Zoomable Scan / 60% Editable FHIR Form
-
-```
-
-#### 2.2-Second Progressive Feedback State Machine
-
-Camera shutter transitions directly to an elevated glassmorphic modal executing a timed state loop before pushing the extracted review view:
-
-```typescript
-// apps/mobile/components/intake/ExtractionModal.tsx
-import React, { useEffect, useState } from 'react';
-import { View, Text, Modal, ActivityIndicator } from 'react-native';
-import { useRouter } from 'expo-router';
-import { ShieldCheck, ScanLine, FileText } from 'lucide-react-native';
-
-export function ExtractionModal({ visible, imageUri }: { visible: boolean; imageUri: string }) {
-  const router = useRouter();
-  const [step, setStep] = useState<number>(1);
-
-  useEffect(() => {
-    if (!visible) return;
-
-    const t1 = setTimeout(() => setStep(2), 700);
-    const t2 = setTimeout(() => setStep(3), 1500);
-    const t3 = setTimeout(() => {
-      router.push({ pathname: '/intake/ocr-verify', params: { uri: imageUri } });
-    }, 2200);
-
-    return () => {
-      clearTimeout(t1);
-      clearTimeout(t2);
-      clearTimeout(t3);
-    };
-  }, [visible, imageUri]);
-
-  return (
-    <Modal animationType="fade" transparent visible="{visible}">
-      <View className="flex-1 bg-black/70 items-center justify-center p-6">
-        <View className="bg-surface-base w-full max-w-sm rounded-2xl p-6 items-center shadow-xl">
-          {step === 1 && (
-            <>
-              <ScanLine color="#10B981" size="{48}"/>
-              <Text className="text-slate-900 font-semibold mt-4 text-base">
-                Scanning document geometry & contrast...
-              </Text>
-            </>
-          )}
-          {step === 2 && (
-            <>
-              <FileText color="#0284C7" size="{48}"/>
-              <Text className="text-slate-900 font-semibold mt-4 text-base">
-                Extracting clinical text via Vision Pipeline...
-              </Text>
-            </>
-          )}
-          {step === 3 && (
-            <>
-              <ShieldCheck color="#047857" size="{48}"/>
-              <Text className="text-slate-900 font-semibold mt-4 text-base">
-                Structuring FHIR MedicationRequest entities...
-              </Text>
-            </>
-          )}
-          <ActivityIndicator className="mt-4" color="#10B981" size="small"/>
-        </View>
-      </View>
-    </Modal>
-  );
-}
-
-```
-
-### 3.3 Split-Screen Verification View
-
-* **Top 40% Viewport:** Scalable, pinch-to-zoom high-resolution preview of the scanned prescription document.
-* **Bottom 60% Viewport:** Scrollable data-entry form parsing detected dosage, frequency, and drug identities into verified FHIR resources. Padded with `contentContainerStyle={{ paddingBottom: 96 }}` to clear bottom action bars.
-
-### 3.4 Hard-Stop Safety Alert Layer
-
-When extracted medication regimens conflict with verified patient records (e.g., penicillin prescribed to a penicillin-allergic patient, or Ciprofloxacin co-prescribed with Tizanidine):
-
-1. The UI blocks the standard "Save to Record" path.
-2. A non-dismissible red alert banner mounts (`bg-danger-50 border-danger-500`).
-3. An explicit override checkbox must be ticked before persistence is unlocked:
-`[ ] I have reviewed the contraindication warning and confirm clinical intent.`
+| AWS Service | Applied Role | Free Tier Boundary | Safety Quota Configuration |
+| --- | --- | --- | --- |
+| **AWS CloudFront** | CDN & SSL Termination | 1 TB/month transfer out; 10M HTTP calls | Hard cache TTL: 86400s on assets |
+| **Amazon S3** | Static UI & Image Archive | 5 GB standard storage; 20,000 GET; 2,000 PUT | Strict 24-hr expiry on `raw-intake/` |
+| **API Gateway (HTTP v2)** | Low-latency endpoint proxy | 1,000,000 requests/month (12 mo) | Throttle: 5 req/s burst limit |
+| **AWS Lambda** | Pre-sign, sanitization, ledger | 1,000,000 calls; 3.2M sec compute (ARM64) | Memory cap: 256 MB; Timeout: 10s |
+| **Amazon DynamoDB** | Metadata & text storage | 25 GB storage; 25 WCU / 25 RCU | Provisioned mode capped at 5 WCU / 5 RCU |
 
 ---
 
-## 4. Clinical Web Architecture (`apps/doctor-web`)
+## 8. Step-by-Step Implementation & Deployment Playbook
 
-### 4.1 Defensive UI Execution Rules
-
-* **No `localStorage` for Active Roles:** Active context is derived strictly from `usePathname()`.
-* **Zero Runtime Crashes:** Every rendered property must utilize defensive optional chaining with localized fallbacks:
-```tsx
-<p className="text-sm font-medium text-slate-800">
-  {patient?.telecom?.[0]?.value ?? '--'}
-</p>
-
-```
-
-
-* **Guarded Interactions:** Every visual button, menu trigger, or interactive card must possess an active handler. Unimplemented backend bridges must log to console or trigger defensive feedback toasts rather than failing silently.
-
-### 4.2 Universal Role Switcher Shell
-
-Located in `apps/doctor-web/components/layout/RoleNavigationBanner.tsx`:
-
-```tsx
-'use client';
-
-import Link from 'next/link';
-import { usePathname } from 'next/navigation';
-
-const ROLES = [
-  { name: 'Super Admin', path: '/admin' },
-  { name: 'Consulting Doctor', path: '/doctor' },
-  { name: 'Help Desk / Registrar', path: '/registrar' },
-  { name: 'Hospital Admin', path: '/hospital-admin' },
-];
-
-export function RoleNavigationBanner() {
-  const pathname = usePathname();
-
-  return (
-    <header className="h-10 bg-slate-950 text-slate-200 px-6 flex items-center justify-between border-b border-slate-800 text-xs select-none">
-      <div className="flex items-center gap-2">
-        <span className="h-2 w-2 rounded-full bg-clinical-500 animate-pulse" />
-        <span className="font-mono uppercase tracking-wider font-semibold text-white">
-          SehatKosh Clinical Fabric
-        </span>
-      </div>
-      <nav className="flex items-center gap-1">
-        {ROLES.map((role) => {
-          const isActive = pathname.startsWith(role.path);
-          return (
-            <Link ${ 'bg-clinical-700 'text-slate-400 : ? className="{`px-3" font-medium hover:bg-slate-800' hover:text-white href="{role.path}" isActive key="{role.path}" py-1 rounded shadow-sm' text-white transition-colors }`}>
-              {role.name}
-            </Link>
-          );
-        })}
-      </nav>
-    </header>
-  );
-}
-
-```
-
-### 4.3 Multi-Role Dashboard Specifications
-
-#### 1. Super Admin Dashboard (`/admin`)
-
-* **Platform Health Matrix:** Active hospital licenses, online practitioner count, FHIR ingestion rates, total data purges requested.
-* **Hospital Onboarding Engine:** Verifies enterprise health system licenses, assigns regional routing codes, issues tenant API keys.
-* **2-of-3 Quorum Sign-Off Protocol:**
-```
-[Super Admin 1 triggers: Purge Hospital Registry H-9821]
-                         │
-                         ▼
-[Status: PENDING_QUORUM (1/2 Signatures Acquired)]
-                         │
-                         ├── Requires Admin 2 or 3 Authorization
-                         ▼
-[Super Admin 2 signs with Session Token] ───► Action Executed & Logged
-
-```
-
-
-* **De-Identification Export Engine:** Strips direct PII (CNIC, names, contact numbers, street addresses), aggregates patient ages into 5-year buckets, and issues sanitized FHIR R4 JSON bundles for research.
-
-#### 2. Consulting Doctor Dashboard (`/doctor`)
-
-Enforces the **30-Second Rule**:
-
-```
-┌────────────────────────────────────────────────────────┐
-│ 0-5s: Anchor Banner (Demographics, Age, Blood, Allergies)│
-├────────────────────────────────────────────────────────┤
-│ 5-15s: 10-Second Clinical TL;DR Card (Emerald Slate)   │
-│ - Primary Active Conditions                            │
-│ - Current Regimen & Contradictions                     │
-├───────────────────────────┬────────────────────────────┤
-│ 15-30s: Dual-Pane View    │ Structured SOAP Dossier    │
-│ Chronological Encounters  │ High-Res Scan Viewer       │
-│ Lab Timeline              │ Electronic Prescriptions   │
-└───────────────────────────┴────────────────────────────┘
-
-```
-
-* **24-Hour Scoped Access Protocol:**
-* Post-consultation access countdown runs on an ephemeral token.
-* *Active (<24h):* Displays green countdown badge `[Access Active: 14h 22m Remaining]`.
-* *Expired (>24h):* Encounters, lab results, and documents blur out. The view locks down to non-clinical baseline data (Name, Blood Type, Emergency Contact).
-* *Extension:* The doctor clicks `Request Access Extension`, triggering a high-priority push notification to the patient's mobile device.
-
-
-
-#### 3. Help Desk / Registrar Dashboard (`/registrar`)
-
-* **Strict PII Sandbox:** Personnel view identity verification fields only (CNIC, Mobile Number, Full Name, Age, Gender). Clinical history, diagnoses, and prescriptions are blocked at the component and API layer.
-* **Quick Intake Desk:** Rapid walk-in registration mapping patients to departmental clinics and on-duty doctors.
-* **Consent Push Notification Dispatch:** Triggers real-time approval prompts to the patient's device for doctor authorization.
-* **Audited Emergency Break-Glass Override:**
-* Bypasses patient consent under immediate medical peril.
-* Demands: Target Patient ID, Clinician ID, Attesting Witness Staff ID, and Clinical Justification.
-* Directly writes an immutable record to the system audit ledger.
-
-
-
-#### 4. Hospital Admin Dashboard (`/hospital-admin`)
-
-* **Roster Management:** Configures departmental room mappings, staff shifts, and active practitioner statuses.
-* **Paper Batch Ingestion Clearinghouse:** High-throughput document scanner upload interface designed for hospital digitization teams processing historical paper charts.
-* **Case Study Clearance Desk:** Vets research case-study escalation requests submitted by consulting physicians before forwarding them to the Super Admin anonymization queue.
-
----
-
-## 5. Backend Services & Data Infrastructure
-
-### 5.1 Infrastructure Orchestration
-
-#### `infra/docker/docker-compose.yml`
-
-```yaml
-version: '3.8'
-
-services:
-  postgres:
-    image: postgres:16-alpine
-    container_name: sehatkosh-postgres
-    environment:
-      POSTGRES_DB: sehatkosh_db
-      POSTGRES_USER: sehatkosh_admin
-      POSTGRES_PASSWORD: development_secret_password
-    ports:
-      - "5432:5432"
-    volumes:
-      - pgdata:/var/lib/postgresql/data
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U sehatkosh_admin -d sehatkosh_db"]
-      interval: 5s
-      timeout: 5s
-      retries: 5
-
-  neo4j:
-    image: neo4j:5-community
-    container_name: sehatkosh-neo4j
-    environment:
-      NEO4J_AUTH: neo4j/development_graph_secret
-    ports:
-      - "7474:7474"
-      - "7687:7687"
-    volumes:
-      - neo4jdata:/data
-
-  localstack:
-    image: localstack/localstack:latest
-    container_name: sehatkosh-localstack
-    ports:
-      - "4566:4566"
-    environment:
-      - SERVICES=s3
-      - AWS_DEFAULT_REGION=us-east-1
-    volumes:
-      - ./init-s3.sh:/etc/localstack/init/ready.d/init-s3.sh
-      - localstackdata:/var/lib/localstack
-
-volumes:
-  pgdata:
-  neo4jdata:
-  localstackdata:
-
-```
-
-#### `infra/docker/init-s3.sh`
+### Step 1: Repository Initialization
 
 ```bash
-#!/bin/bash
-awslocal s3 mb s3://sehatkosh-prescriptions
-awslocal s3 mb s3://sehatkosh-research-exports
-echo "LocalStack S3 Provisioning Complete."
+# Initialize project workspace
+mkdir sehatkosh-donor-web && cd sehatkosh-donor-web
+pnpm init
+pnpm add -D vite typescript tailwindcss postcss autoprefixer
+pnpm add idb-keyval lucide
+
+# Initialize tailwind
+npx tailwindcss init -p
 
 ```
 
-### 5.2 FastAPI Architecture (`services/backend`)
+### Step 2: AWS Backend Routine Definitions
 
-#### Core Dependencies (`requirements.txt`)
-
-```text
-fastapi>=0.110.0
-uvicorn[standard]>=0.28.0
-sqlalchemy[asyncio]>=2.0.28
-asyncpg>=0.29.0
-pydantic>=2.6.4
-neo4j>=5.18.0
-aioboto3>=12.3.0
-python-jose[cryptography]>=3.3.0
-passlib[bcrypt]>=1.7.4
-python-multipart>=0.0.9
-
-```
-
-#### Database Schema: SQLAlchemy 2.0 Async
+#### 1. Session & Pre-Sign Lambda (`services/pre_sign.py`)
 
 ```python
-# services/backend/app/models/clinical.py
-from datetime import datetime
-from uuid import uuid4
-from sqlalchemy import String, DateTime, ForeignKey, Index
-from sqlalchemy.dialects.postgresql import UUID, JSONB
-from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
+import json
+import os
+import time
+import ulid
+import boto3
+from botocore.config import Config
 
-class Base(DeclarativeBase):
-    pass
+s3_client = boto3.client('s3', config=Config(signature_version='s3v4'))
+dynamodb = boto3.resource('dynamodb')
+table = dynamodb.Table(os.environ['TABLE_NAME'])
 
-class PatientModel(Base):
-    __tablename__ = "patients"
-
-    id: Mapped[UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid4)
-    cnic_hash: Mapped[str] = mapped_column(String(64), unique=True, index=True, nullable=False)
-    fhir_payload: Mapped[dict] = mapped_column(JSONB, nullable=False)
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
-
-    encounters = relationship("EncounterModel", back_populates="patient")
-
-class EncounterModel(Base):
-    __tablename__ = "encounters"
-
-    id: Mapped[UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid4)
-    patient_id: Mapped[UUID] = mapped_column(ForeignKey("patients.id"), nullable=False)
-    practitioner_id: Mapped[str] = mapped_column(String(64), nullable=False)
-    status: Mapped[str] = mapped_column(String(32), default="in-progress")
-    soap_notes: Mapped[dict] = mapped_column(JSONB, nullable=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
-
-    patient = relationship("PatientModel", back_populates="encounters")
-    documents = relationship("PrescriptionDocumentModel", back_populates="encounter")
-
-class PrescriptionDocumentModel(Base):
-    __tablename__ = "prescription_documents"
-
-    id: Mapped[UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid4)
-    encounter_id: Mapped[UUID] = mapped_column(ForeignKey("encounters.id"), nullable=False)
-    s3_key: Mapped[str] = mapped_column(String(255), nullable=False)
-    raw_ocr_text: Mapped[str] = mapped_column(String, nullable=True)
-    fhir_bundle: Mapped[dict] = mapped_column(JSONB, nullable=False)
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
-
-    encounter = relationship("EncounterModel", back_populates="documents")
-
-class AuditLedgerModel(Base):
-    __tablename__ = "audit_ledger"
-
-    id: Mapped[UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid4)
-    actor_id: Mapped[str] = mapped_column(String(64), nullable=False)
-    action: Mapped[str] = mapped_column(String(64), nullable=False)
-    target_resource: Mapped[str] = mapped_column(String(128), nullable=False)
-    is_break_glass: Mapped[bool] = mapped_column(default=False)
-    justification: Mapped[str] = mapped_column(String, nullable=True)
-    timestamp: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+def handler(event, context):
+    try:
+        body = json.loads(event.get('body', '{}'))
+        mime_type = body.get('mime_type')
+        
+        if mime_type not in ['image/jpeg', 'image/png', 'image/webp']:
+            return {'statusCode': 400, 'body': json.dumps({'error': 'Invalid MIME type'})}
+        
+        donation_id = str(ulid.new())
+        s3_key = f"raw-intake/{donation_id}.tmp"
+        
+        # Mint pre-signed URL with upload constraints
+        presigned_url = s3_client.generate_presigned_url(
+            ClientMethod='put_object',
+            Params={
+                'Bucket': os.environ['BUCKET_NAME'],
+                'Key': s3_key,
+                'ContentType': mime_type
+            },
+            ExpiresIn=300
+        )
+        
+        # Create unverified ledger entry
+        table.put_item(
+            Item={
+                'PK': f"DONATION#{donation_id}",
+                'donation_id': donation_id,
+                'status': 'PENDING_UPLOAD',
+                'created_at': int(time.time()),
+                's3_raw_key': s3_key
+            }
+        )
+        
+        return {
+            'statusCode': 200,
+            'headers': {'Content-Type': 'application/json'},
+            'body': json.dumps({'donation_id': donation_id, 'upload_url': presigned_url})
+        }
+    except Exception as e:
+        return {'statusCode': 500, 'body': json.dumps({'error': str(e)})}
 
 ```
 
-### 5.3 Neo4j Clinical Knowledge Graph
-
-Models contraindications, drug-drug interactions, and drug-allergy pathways:
-
-```cypher
-// Knowledge Graph Initialization
-CREATE CONSTRAINT unique_drug_code IF NOT EXISTS
-FOR (d:Drug) REQUIRE d.code IS UNIQUE;
-
-CREATE CONSTRAINT unique_allergy_code IF NOT EXISTS
-FOR (a:Allergy) REQUIRE a.code IS UNIQUE;
-
-// Core Conflict Relationship Schema
-// (:Drug {code, name})-[:CONTRAINDICATED_WITH {severity: 'HIGH'}]->(:Drug)
-// (:Drug {code, name})-[:TRIGGERS_ALLERGY]->(:Allergy)
-
-MATCH (d1:Drug {code: 'snomed:372862008'}) // Ciprofloxacin
-MATCH (d2:Drug {code: 'snomed:387340004'}) // Tizanidine
-MERGE (d1)-[r:CONTRAINDICATED_WITH {severity: 'CRITICAL', reason: 'CYP1A2 Inhibition'}]->(d2);
-
-```
-
-#### Query Implementation: Real-Time Drug Interaction Check
+#### 2. Commit & Sanitize Lambda (`services/sanitize.py`)
 
 ```python
-# services/backend/app/services/safety.py
-from neo4j import AsyncGraphDatabase
+import json
+import os
+import io
+import hashlib
+import boto3
+from PIL import Image, ImageOps
 
-class ClinicalSafetyEngine:
-    def __init__(self, uri: str, auth: tuple):
-        self.driver = AsyncGraphDatabase.driver(uri, auth=auth)
+s3 = boto3.client('s3')
+dynamodb = boto3.resource('dynamodb')
+table = dynamodb.Table(os.environ['TABLE_NAME'])
 
-    async def verify_prescriptions(self, active_drug_codes: list[str], proposed_drug_code: str):
-        query = """
-        MATCH (proposed:Drug {code: $proposed_code})-[r:CONTRAINDICATED_WITH]-(active:Drug)
-        WHERE active.code IN $active_codes
-        RETURN active.name AS conflicting_drug, r.severity AS severity, r.reason AS reason
-        """
-        async with self.driver.session() as session:
-            result = await session.run(query, proposed_code=proposed_drug_code, active_codes=active_drug_codes)
-            records = await result.data()
-            return records
-
-```
-
----
-
-## 6. HL7 FHIR R4 Interoperability & Coding Specification
-
-Clinical entities are strictly mapped to target HL7 FHIR R4 resource definitions.
-
-| Domain Entity | FHIR R4 Resource | Standard Vocabularies | Fallback Behavior |
-| --- | --- | --- | --- |
-| Prescription Item | `MedicationRequest` | SNOMED-CT | Preserve raw brand name in `text`; leave `coding` array empty |
-| Vital Sign / Labs | `Observation` | LOINC (Code), UCUM (Units) | Do not hallucinate LOINC; map category to generic vitals panel |
-| Lab/Image Group | `DiagnosticReport` | LOINC / SNOMED-CT | Store raw diagnostic text in report narrative (`text.div`) |
-| Demographics | `Patient` | ISO 3166 (Country), Local IDs | National CNIC hashed for matching; standard identifier array |
-| Time Access Auth | `Consent` | SNOMED-CT (Scope) | Default to ISO 8601 strict timestamps |
-
-### 6.1 Sample Standard Mapping: `MedicationRequest`
-
-Preserving unmapped Pakistani brand names safely without hallucinated SNOMED ontology terms:
-
-```json
-{
-  "resourceType": "MedicationRequest",
-  "id": "medrx-789012",
-  "status": "active",
-  "intent": "order",
-  "medicationCodeableConcept": {
-    "coding": [
-      {
-        "system": "[http://snomed.info/sct](http://snomed.info/sct)",
-        "code": "322236009",
-        "display": "Paracetamol 500 mg oral tablet"
-      }
-    ],
-    "text": "Panadol 500mg Tablet"
-  },
-  "subject": {
-    "reference": "Patient/pat-9921",
-    "display": "Muhammad Ahsan"
-  },
-  "authoredOn": "2026-09-15T14:30:00Z",
-  "dosageInstruction": [
-    {
-      "text": "1 tablet every 8 hours as needed for fever",
-      "timing": {
-        "code": {
-          "text": "TID"
-        }
-      },
-      "doseAndRate": [
-        {
-          "doseQuantity": {
-            "value": 500,
-            "unit": "mg",
-            "system": "[http://unitsofmeasure.org](http://unitsofmeasure.org)",
-            "code": "mg"
-          }
-        }
-      ]
-    }
-  ]
+MAGIC_NUMBERS = {
+    b'\xFF\xD8\xFF': 'jpeg',
+    b'\x89\x50\x4E\x47': 'png',
+    b'RIFF': 'webp'
 }
 
+def handler(event, context):
+    try:
+        headers = event.get('headers', {})
+        body = json.loads(event.get('body', '{}'))
+        
+        donation_id = body.get('donation_id')
+        transcription = body.get('transcription', '')
+        
+        # Extract edge geography headers
+        country = headers.get('cloudfront-viewer-country', 'UNKNOWN')
+        city = headers.get('cloudfront-viewer-city-name', 'UNKNOWN')
+        raw_ip = headers.get('x-forwarded-for', '').split(',')[0].strip()
+        ip_hash = hashlib.sha256(raw_ip.encode()).hexdigest()[:16] if raw_ip else 'UNKNOWN'
+
+        raw_key = f"raw-intake/{donation_id}.tmp"
+        sanitized_key = f"sanitized-archive/{donation_id}.webp"
+        
+        # 1. Fetch raw binary from S3
+        obj = s3.get_object(Bucket=os.environ['BUCKET_NAME'], Key=raw_key)
+        raw_bytes = obj['Body'].read()
+        
+        # 2. Verify magic bytes
+        is_valid = any(raw_bytes.startswith(sig) for sig in MAGIC_NUMBERS.keys())
+        if not is_valid:
+            table.update_item(
+                Key={'PK': f"DONATION#{donation_id}"},
+                UpdateExpression="SET #s = :status",
+                ExpressionAttributeNames={'#s': 'status'},
+                ExpressionAttributeValues={':status': 'QUARANTINED'}
+            )
+            return {'statusCode': 400, 'body': json.dumps({'error': 'Malicious payload detected'})}
+        
+        # 3. Strip EXIF and re-encode to WebP
+        image = Image.open(io.BytesIO(raw_bytes))
+        image = ImageOps.exif_transpose(image) # Maintain user orientation
+        output_buffer = io.BytesIO()
+        image.save(output_buffer, format='WEBP', quality=85, method=6)
+        output_bytes = output_buffer.getvalue()
+        
+        # 4. Save sanitized asset
+        s3.put_object(
+            Bucket=os.environ['BUCKET_NAME'],
+            Key=sanitized_key,
+            Body=output_bytes,
+            ContentType='image/webp'
+        )
+        
+        # 5. Delete raw buffer object
+        s3.delete_object(Bucket=os.environ['BUCKET_NAME'], Key=raw_key)
+        
+        # 6. Commit record update
+        table.update_item(
+            Key={'PK': f"DONATION#{donation_id}"},
+            UpdateExpression="""
+                SET #s = :status,
+                    transcription = :txt,
+                    s3_sanitized_key = :skey,
+                    geo_country = :c,
+                    geo_city = :city,
+                    ip_fingerprint = :ip,
+                    file_size = :size
+            """,
+            ExpressionAttributeNames={'#s': 'status'},
+            ExpressionAttributeValues={
+                ':status': 'VERIFIED',
+                ':txt': transcription,
+                ':skey': sanitized_key,
+                ':c': country,
+                ':city': city,
+                ':ip': ip_hash,
+                ':size': len(output_bytes)
+            }
+        )
+        
+        return {'statusCode': 200, 'body': json.dumps({'status': 'SUCCESS', 'donation_id': donation_id})}
+    except Exception as e:
+        return {'statusCode': 500, 'body': json.dumps({'error': str(e)})}
+
 ```
 
-### 6.2 Sample Standard Mapping: `Observation`
+### Step 3: Frontend Single-Page Interface (`index.html`)
 
-```json
-{
-  "resourceType": "Observation",
-  "id": "obs-blood-pressure",
-  "status": "final",
-  "category": [
-    {
-      "coding": [
-        {
-          "system": "[http://terminology.hl7.org/CodeSystem/observation-category](http://terminology.hl7.org/CodeSystem/observation-category)",
-          "code": "vital-signs",
-          "display": "Vital Signs"
-        }
-      ]
-    }
-  ],
-  "code": {
-    "coding": [
-      {
-        "system": "[http://loinc.org](http://loinc.org)",
-        "code": "85354-9",
-        "display": "Blood pressure panel with all children optional"
-      }
-    ],
-    "text": "Blood Pressure"
-  },
-  "subject": {
-    "reference": "Patient/pat-9921"
-  },
-  "effectiveDateTime": "2026-09-15T14:35:00Z",
-  "component": [
-    {
-      "code": {
-        "coding": [{ "system": "[http://loinc.org](http://loinc.org)", "code": "8480-6", "display": "Systolic blood pressure" }]
-      },
-      "valueQuantity": {
-        "value": 120,
-        "unit": "mmHg",
-        "system": "[http://unitsofmeasure.org](http://unitsofmeasure.org)",
-        "code": "mm[Hg]"
-      }
-    },
-    {
-      "code": {
-        "coding": [{ "system": "[http://loinc.org](http://loinc.org)", "code": "8462-4", "display": "Diastolic blood pressure" }]
-      },
-      "valueQuantity": {
-        "value": 80,
-        "unit": "mmHg",
-        "system": "[http://unitsofmeasure.org](http://unitsofmeasure.org)",
-        "code": "mm[Hg]"
-      }
-    }
-  ]
-}
+```html
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>SehatKosh | Clinical Prescription Ingestion Desk</title>
+  <link rel="stylesheet" href="/src/style.css">
+</head>
+<body class="bg-slate-950 text-slate-100 min-h-[100dvh] flex flex-col font-sans antialiased selection:bg-emerald-500 selection:text-black">
+
+  <!-- Header -->
+  <header class="border-b border-slate-800 px-4 py-3 flex items-center justify-between bg-slate-900/50 backdrop-blur">
+    <div class="flex items-center space-x-2">
+      <div class="h-3 w-3 rounded-full bg-emerald-500 animate-pulse"></div>
+      <span class="font-bold tracking-tight text-sm text-slate-200">SEHATKOSH // CLINICAL DONOR</span>
+    </div>
+    <div id="network-pill" class="text-xs px-2 py-0.5 rounded border border-emerald-500/30 text-emerald-400 bg-emerald-500/10">ONLINE</div>
+  </header>
+
+  <!-- Main Viewport -->
+  <main class="flex-1 w-full max-w-md mx-auto p-4 flex flex-col justify-between">
+    <form id="donation-form" class="space-y-4 flex-1 flex flex-col justify-between">
+      
+      <div class="space-y-4">
+        <!-- Capture Slot -->
+        <div>
+          <label class="block text-xs font-mono uppercase text-slate-400 mb-1">01. Prescription Document</label>
+          <div id="drop-zone" class="border-2 border-dashed border-slate-700 hover:border-slate-500 rounded-lg p-4 text-center cursor-pointer transition bg-slate-900/30 flex flex-col items-center justify-center min-h-[160px] relative">
+            <input type="file" id="image-input" accept="image/jpeg,image/png,image/webp" capture="environment" class="sr-only">
+            <div id="preview-container" class="hidden absolute inset-0 rounded-lg overflow-hidden bg-black flex items-center justify-center">
+              <img id="image-preview" class="max-h-full max-w-full object-contain" alt="Upload preview">
+              <button type="button" id="clear-image" class="absolute top-2 right-2 bg-slate-900/80 text-white rounded p-1 text-xs border border-slate-700 hover:bg-red-950">REMOVE</button>
+            </div>
+            <div id="upload-prompt" class="space-y-1">
+              <svg class="w-8 h-8 text-slate-500 mx-auto" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M15 13a3 3 0 11-6 0 3 3 0 016 0z"></path></svg>
+              <p class="text-xs text-slate-300 font-medium">Tap to capture or upload scan</p>
+              <p class="text-[10px] text-slate-500 font-mono">JPG, PNG, WebP up to 10MB</p>
+            </div>
+          </div>
+        </div>
+
+        <!-- Transcription Slot -->
+        <div class="flex-1 flex flex-col">
+          <div class="flex items-center justify-between mb-1">
+            <label class="block text-xs font-mono uppercase text-slate-400">02. Clinical Text Transcription</label>
+            <span id="char-counter" class="text-[10px] font-mono text-slate-500">0 / 4000</span>
+          </div>
+          <textarea 
+            id="transcription-input" 
+            maxlength="4000" 
+            placeholder="Type or paste medications, instructions, dosages, and notes..." 
+            class="w-full flex-1 min-h-[140px] bg-slate-900 border border-slate-800 focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 rounded-lg p-3 text-xs text-slate-200 placeholder-slate-600 outline-none resize-none transition"
+          ></textarea>
+        </div>
+      </div>
+
+      <!-- Action Footer -->
+      <div class="pt-2">
+        <div id="upload-progress-bar" class="hidden w-full bg-slate-800 rounded-full h-1.5 mb-2 overflow-hidden">
+          <div id="progress-fill" class="bg-emerald-500 h-full w-0 transition-all duration-150"></div>
+        </div>
+        <button 
+          type="submit" 
+          id="submit-btn" 
+          disabled 
+          class="w-full h-12 bg-emerald-600 hover:bg-emerald-500 disabled:bg-slate-800 disabled:text-slate-600 disabled:cursor-not-allowed font-medium text-xs tracking-wider uppercase rounded-lg transition flex items-center justify-center space-x-2 text-white"
+        >
+          <span>Submit Contribution</span>
+        </button>
+      </div>
+
+    </form>
+  </main>
+
+  <script type="module" src="/src/main.ts"></script>
+</body>
+</html>
+
+```
+
+### Step 4: Verification and Automated E2E Testing Suite
+
+Run validation checks against deployed infrastructure endpoints using `curl` to confirm input constraints and error handling:
+
+```bash
+# Test 1: Reject unauthenticated oversized file requests
+curl -s -X POST https://<api-id>.execute-api.us-east-1.amazonaws.com/session \
+  -H "Content-Type: application/json" \
+  -d '{"mime_type": "application/x-sh"}' \
+  | grep "Invalid MIME type"
+
+# Test 2: Reject payloads exceeding maximum byte length
+curl -s -X POST https://<api-id>.execute-api.us-east-1.amazonaws.com/commit \
+  -H "Content-Type: application/json" \
+  -d '{"donation_id": "fake", "transcription": "'$(printf 'A%.0s' {1..4005})'"}' \
+  | grep "400"
 
 ```
 
 ---
 
-## 7. Security, Privacy & Compliance (HIPAA / GDPR Alignment)
+## 9. Failure Modes & Operational Controls
 
-```
-┌───────────────────────────────────────────────────────────┐
-│                    SECURITY ARCHITECTURE                  │
-├─────────────────────────┬─────────────────────────────────┤
-│ At Rest: AES-256-GCM    │ In Transit: TLS 1.3 Strict      │
-├─────────────────────────┴─────────────────────────────────┤
-│ RBAC Matrix                                               │
-│ - Super Admin: Platform config, de-identified datasets    │
-│ - Hospital Admin: Department rosters, ingestion queues   │
-│ - Consulting Doctor: 24h scoped clinical records          │
-│ - Help Desk / Registrar: Identity lookup only (PII masked)│
-├───────────────────────────────────────────────────────────┤
-│ Automated Research De-Identification:                     │
-│ 1. Direct PII Removal (Name, CNIC, Phone, Address)        │
-│ 2. Quasi-Identifier Binning (Age -> 5-year ranges)        │
-│ 3. Audit Immutability via Append-Only PostgreSQL Log      │
-└───────────────────────────────────────────────────────────┘
-
-```
-
-* **Role-Based Access Control (RBAC):** Verified at every API edge using cryptographic JWTs containing explicit role claims.
-* **Emergency Break-Glass Audit:** An append-only table records the clinician's signature, timestamp, attesting witness ID, and justification whenever consent controls are overridden.
-* **PII Redaction Engine:** Text fields passing into research pipelines are automatically stripped of regular-expression patterns matching Pakistani CNICs (`\b\d{5}-\d{7}-\d{1}\b`) and cellular numbers (`\b(03\d{2}|(\+923\d{2}))\d{7}\b`).
-
----
-
-## 8. Implementation Roadmap & Verification Milestones
-
-### Phase 1: Environment Hardening & Monorepo Wiring (Week 1)
-
-* [ ] Enforce `.npmrc` hoisting directives (`shamefully-hoist=true`).
-* [ ] Bootstrap Turborepo structure; link shared packages (`@sehatkosh/types`, `@sehatkosh/mock-data`, `@sehatkosh/tailwind-config`).
-* [ ] Initialize LocalStack, PostgreSQL 16, and Neo4j via Docker Compose.
-
-### Phase 2: Mobile UI/UX Rectifications (Week 2)
-
-* [ ] Calibrate top screen clearings to `Math.max(insets.top, 16) + 8px`.
-* [ ] Implement platform-specific keyboard avoidance (iOS tab bar padding offset, Android native resize).
-* [ ] Bind assistant suggestions to thread status; auto-dismiss on message delivery.
-* [ ] Build camera shutter workflow with the 2.2-second extraction modal sequence (Geometry $\rightarrow$ OCR $\rightarrow$ FHIR).
-* [ ] Implement 40/60 split verification screen with bottom padding clearance.
-
-### Phase 3: Clinical Web Dashboards (Week 3–4)
-
-* [ ] Implement persistent global role navigation bar.
-* [ ] Super Admin: Build hospital licensing workflows and 2-of-3 quorum sign-off controls.
-* [ ] Consulting Doctor: Implement the 30-Second Rule layout and 24-hour access countdown mechanism.
-* [ ] Help Desk / Registrar: Build PII-sandboxed patient lookup desk and emergency break-glass modal.
-* [ ] Hospital Admin: Implement room rosters and paper ingestion queue.
-
-### Phase 4: Clinical Informatics & Interoperability (Week 5)
-
-* [ ] Seed Neo4j graph with common clinical interactions and contraindication pathways.
-* [ ] Implement FastAPI FHIR ingestion routes for `MedicationRequest`, `Observation`, and `Consent`.
-* [ ] Write integration tests verifying unmapped Pakistani drug names preserve raw text without invalid SNOMED generation.
-
-### Phase 5: Proposal Defense Preparation & Hardening (Week 6)
-
-* [ ] Run complete end-to-end integration walkthrough (Patient scans on mobile $\rightarrow$ Registrar checks in $\rightarrow$ Doctor reviews dossier within 30 seconds $\rightarrow$ Admin monitors quorum).
-* [ ] Security audit: Verify zero unhandled UI click handlers and zero clinical data leaks into the Help Desk sandbox.
-
-```
-
-```
+* **Cold Start Latency:** Configured exclusively with Python 3.11 ARM64 runtimes with zero external layer dependencies. Eliminates container provisioning, preserving cold starts under **350ms**.
+* **Traffic Spikes:** DynamoDB operates in on-demand billing mode to absorb burst write spikes without throttling or manual capacity intervention.
+* **Malicious File Ingestion:** Direct client-to-S3 transfers prevent untrusted binaries from ever touching the application host runtime. Uploaded files remain isolated within an unprivileged S3 staging bucket. Files are then processed via an isolated, memory-constrained Lambda task that converts data to sanitized formats before pushing to production datasets.
