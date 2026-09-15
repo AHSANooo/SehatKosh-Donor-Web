@@ -1,0 +1,246 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <meta name="description" content="SehatKosh Clinical Donor Web: High-resilience, privacy-first mobile portal for donating medical prescriptions to research.">
+  <meta name="theme-color" content="#030712">
+  <title>SehatKosh | Clinical Prescription Ingestion Desk</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  <script type="module" crossorigin src="/assets/index-CSsnbuQA.js"></script>
+  <link rel="stylesheet" crossorigin href="/assets/index-Bfvqj6VC.css">
+</head>
+<body class="bg-slate-950 text-slate-100 min-h-[100dvh] flex flex-col font-sans antialiased selection:bg-emerald-500 selection:text-black">
+
+  <!-- Clinical Header -->
+  <header class="border-b border-slate-800/80 px-4 py-3 flex items-center justify-between bg-slate-900/60 backdrop-blur sticky top-0 z-30">
+    <div class="flex items-center space-x-2.5">
+      <div class="relative flex items-center justify-center">
+        <div class="h-3 w-3 rounded-full bg-emerald-500 animate-ping absolute opacity-75"></div>
+        <div class="h-2.5 w-2.5 rounded-full bg-emerald-500 relative"></div>
+      </div>
+      <div>
+        <h1 class="font-bold tracking-tight text-xs md:text-sm text-slate-100 font-mono flex items-center gap-1.5">
+          <span>SEHATKOSH</span>
+          <span class="text-slate-500">//</span>
+          <span class="text-emerald-400 font-medium">DONOR DESK</span>
+        </h1>
+      </div>
+    </div>
+    <div class="flex items-center space-x-2">
+      <button 
+        id="queue-pill-btn" 
+        class="text-xs px-2 py-1 rounded-md border border-slate-700 bg-slate-800/60 hover:bg-slate-800 text-slate-300 font-mono flex items-center gap-1.5 transition"
+        title="View Offline Queue"
+      >
+        <span>Queue</span>
+        <span id="queue-count-badge" class="hidden px-1.5 py-0.2 bg-amber-500 text-slate-950 text-[10px] font-bold rounded-full">0</span>
+      </button>
+      <div id="network-pill" class="text-xs px-2.5 py-0.5 rounded-full border border-emerald-500/30 text-emerald-400 bg-emerald-500/10 font-mono flex items-center gap-1.5">
+        <span class="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span> ONLINE
+      </div>
+    </div>
+  </header>
+
+  <!-- Notification Banner -->
+  <div id="alert-banner" class="hidden mx-4 mt-3">
+    <div class="flex items-center justify-between w-full">
+      <span id="alert-message" class="font-medium text-xs"></span>
+      <button id="close-alert-btn" class="text-slate-400 hover:text-white text-sm ml-2 font-bold">&times;</button>
+    </div>
+  </div>
+
+  <!-- Main Viewport -->
+  <main class="flex-1 w-full max-w-lg mx-auto p-4 flex flex-col justify-between">
+    <form id="donation-form" class="space-y-4 flex-1 flex flex-col justify-between">
+      
+      <div class="space-y-4">
+        <!-- 01. Prescription Document Upload -->
+        <div>
+          <div class="flex items-center justify-between mb-1.5">
+            <label class="block text-xs font-mono uppercase tracking-wider text-slate-300 font-semibold">
+              01. Prescription Document
+            </label>
+            <span id="image-meta-badge" class="hidden text-[10px] font-mono text-emerald-400 bg-emerald-950/40 border border-emerald-800/40 px-2 py-0.5 rounded">
+              Ready
+            </span>
+          </div>
+
+          <div 
+            id="drop-zone" 
+            class="border-2 border-dashed border-slate-700/80 hover:border-emerald-500/60 rounded-xl p-4 text-center cursor-pointer transition-all duration-200 bg-slate-900/40 hover:bg-slate-900/60 flex flex-col items-center justify-center min-h-[170px] relative overflow-hidden group"
+          >
+            <!-- Native Camera & File Input -->
+            <input 
+              type="file" 
+              id="image-input" 
+              accept="image/jpeg,image/png,image/webp" 
+              capture="environment" 
+              class="sr-only"
+            >
+
+            <!-- Image Preview Overlay -->
+            <div id="preview-container" class="hidden absolute inset-0 rounded-xl overflow-hidden bg-slate-950 flex items-center justify-center z-10">
+              <img id="image-preview" class="max-h-full max-w-full object-contain" alt="Prescription preview">
+              <button 
+                type="button" 
+                id="clear-image" 
+                class="absolute top-2.5 right-2.5 bg-slate-900/90 text-red-400 rounded-lg px-2.5 py-1 text-xs border border-red-900/50 hover:bg-red-950/80 transition flex items-center gap-1 font-mono"
+              >
+                <span>REMOVE</span>
+              </button>
+            </div>
+
+            <!-- Upload Prompt -->
+            <div id="upload-prompt" class="space-y-2 py-2">
+              <div class="w-12 h-12 rounded-full bg-slate-800/80 flex items-center justify-center mx-auto border border-slate-700/50 group-hover:border-emerald-500/40 group-hover:scale-105 transition">
+                <svg class="w-6 h-6 text-slate-400 group-hover:text-emerald-400 transition" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z" />
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M15 13a3 3 0 11-6 0 3 3 0 016 0z" />
+                </svg>
+              </div>
+              <div>
+                <p class="text-xs text-slate-200 font-medium">Tap to capture with camera or browse</p>
+                <p class="text-[11px] text-slate-500 font-mono mt-0.5">JPG, PNG, WebP &bull; Up to 10 MB</p>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- 02. Clinical Text Transcription -->
+        <div class="flex-1 flex flex-col space-y-1.5">
+          <div class="flex items-center justify-between">
+            <label class="block text-xs font-mono uppercase tracking-wider text-slate-300 font-semibold">
+              02. Clinical Text Transcription
+            </label>
+            <span id="char-counter" class="text-[10px] font-mono text-slate-500">0 / 4000</span>
+          </div>
+
+          <!-- Quick Clinical Tags -->
+          <div class="flex flex-wrap gap-1.5 py-1">
+            <button type="button" data-tag="Tab." class="clinical-chip text-[10px] font-mono px-2 py-0.5 rounded bg-slate-800/80 hover:bg-slate-700 text-slate-300 border border-slate-700">+ Tab.</button>
+            <button type="button" data-tag="Cap." class="clinical-chip text-[10px] font-mono px-2 py-0.5 rounded bg-slate-800/80 hover:bg-slate-700 text-slate-300 border border-slate-700">+ Cap.</button>
+            <button type="button" data-tag="Syp." class="clinical-chip text-[10px] font-mono px-2 py-0.5 rounded bg-slate-800/80 hover:bg-slate-700 text-slate-300 border border-slate-700">+ Syp.</button>
+            <button type="button" data-tag="OD (Once daily)" class="clinical-chip text-[10px] font-mono px-2 py-0.5 rounded bg-slate-800/80 hover:bg-slate-700 text-slate-300 border border-slate-700">+ OD</button>
+            <button type="button" data-tag="BD (Twice daily)" class="clinical-chip text-[10px] font-mono px-2 py-0.5 rounded bg-slate-800/80 hover:bg-slate-700 text-slate-300 border border-slate-700">+ BD</button>
+            <button type="button" data-tag="TDS (Thrice daily)" class="clinical-chip text-[10px] font-mono px-2 py-0.5 rounded bg-slate-800/80 hover:bg-slate-700 text-slate-300 border border-slate-700">+ TDS</button>
+            <button type="button" data-tag="SOS" class="clinical-chip text-[10px] font-mono px-2 py-0.5 rounded bg-slate-800/80 hover:bg-slate-700 text-slate-300 border border-slate-700">+ SOS</button>
+          </div>
+
+          <div class="relative rounded-lg border border-slate-800 bg-slate-900/60 focus-within:border-emerald-500/70 transition">
+            <textarea 
+              id="transcription-input" 
+              maxlength="4000" 
+              placeholder="Type or paste medications, instructions, dosages, and notes (minimum 10 characters)..." 
+              class="w-full min-h-[140px] bg-transparent p-3 text-xs text-slate-100 placeholder-slate-500 outline-none resize-none font-sans"
+            ></textarea>
+            
+            <!-- Real-time PII Shield Badge -->
+            <div id="pii-shield-badge" class="hidden absolute bottom-2 right-2 text-[10px] font-mono bg-emerald-950/90 text-emerald-300 border border-emerald-700/60 px-2 py-0.5 rounded shadow-sm">
+              Shield Active
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Action Footer -->
+      <div class="pt-3 space-y-2">
+        <!-- Progress Bar -->
+        <div id="upload-progress-bar" class="hidden space-y-1">
+          <div class="flex justify-between text-[11px] font-mono text-emerald-400">
+            <span id="upload-status-text">Uploading...</span>
+          </div>
+          <div class="w-full bg-slate-800 rounded-full h-1.5 overflow-hidden">
+            <div id="progress-fill" class="bg-emerald-500 h-full w-0 transition-all duration-200"></div>
+          </div>
+        </div>
+
+        <button 
+          type="submit" 
+          id="submit-btn" 
+          disabled 
+          class="w-full min-h-[48px] bg-emerald-600 hover:bg-emerald-500 disabled:bg-slate-800/80 disabled:text-slate-500 disabled:cursor-not-allowed font-semibold text-xs tracking-wider uppercase rounded-xl transition duration-150 flex items-center justify-center space-x-2 text-white shadow-lg shadow-emerald-900/20"
+        >
+          <span>Submit Contribution</span>
+        </button>
+      </div>
+
+    </form>
+  </main>
+
+  <!-- Confirmation Modal -->
+  <div id="confirmation-modal" class="hidden fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
+    <div class="bg-slate-900 border border-slate-800 rounded-2xl p-6 max-w-sm w-full space-y-5 shadow-2xl">
+      <div class="text-center space-y-2">
+        <div class="w-12 h-12 bg-emerald-500/10 border border-emerald-500/30 rounded-full flex items-center justify-center mx-auto text-emerald-400">
+          <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" />
+          </svg>
+        </div>
+        <h3 class="text-sm font-bold tracking-tight text-white uppercase font-mono">Donation Received</h3>
+        <p id="confirmed-note" class="text-xs text-slate-400">
+          Prescription de-identified, normalized to WebP, and committed to the research corpus.
+        </p>
+      </div>
+
+      <div class="bg-slate-950 border border-slate-800/80 rounded-xl p-3 space-y-1.5 text-center">
+        <div class="text-[10px] font-mono text-slate-500 uppercase">Donation Identifier</div>
+        <div id="confirmed-donation-id" class="font-mono text-emerald-400 text-xs font-semibold select-all break-all">
+          01JC8ZP...
+        </div>
+        <div class="pt-1">
+          <span id="confirmed-status-badge" class="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-mono bg-emerald-500/10 text-emerald-400 border border-emerald-500/30">
+            VERIFIED
+          </span>
+        </div>
+      </div>
+
+      <div class="space-y-2">
+        <button 
+          type="button" 
+          id="copy-id-btn" 
+          class="w-full min-h-[44px] bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 text-xs font-medium rounded-xl transition flex items-center justify-center space-x-1.5 font-mono"
+        >
+          <span>Copy Receipt ID</span>
+        </button>
+        <button 
+          type="button" 
+          id="donate-another-btn" 
+          class="w-full min-h-[48px] bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold rounded-xl transition uppercase tracking-wider font-sans"
+        >
+          Donate Another Prescription
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Offline Queue Drawer Modal -->
+  <div id="queue-drawer" class="hidden fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
+    <div class="bg-slate-900 border border-slate-800 rounded-2xl p-5 max-w-md w-full space-y-4 shadow-2xl flex flex-col max-h-[85vh]">
+      <div class="flex items-center justify-between border-b border-slate-800 pb-3">
+        <div class="flex items-center space-x-2">
+          <span class="w-2 h-2 rounded-full bg-amber-500"></span>
+          <h3 class="text-xs font-bold font-mono uppercase text-slate-200">Local Offline Queue</h3>
+        </div>
+        <button id="close-queue-drawer" class="text-slate-400 hover:text-white text-lg font-bold">&times;</button>
+      </div>
+
+      <div id="queue-items-container" class="flex-1 overflow-y-auto space-y-2.5 pr-1">
+        <!-- Injected dynamically -->
+      </div>
+
+      <div class="border-t border-slate-800 pt-3 flex space-x-2">
+        <button 
+          id="flush-queue-btn" 
+          class="flex-1 min-h-[44px] bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-medium rounded-xl transition"
+        >
+          Force Sync Now
+        </button>
+      </div>
+    </div>
+  </div>
+
+</body>
+</html>

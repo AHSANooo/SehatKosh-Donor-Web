@@ -1,0 +1,124 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: >
+  SehatKosh Donor Web Serverless Backend
+  Zero-cost, high-resilience clinical prescription ingestion infrastructure.
+
+Globals:
+  Function:
+    Timeout: 10
+    MemorySize: 256
+    Runtime: python3.11
+    Architectures:
+      - arm64
+    Environment:
+      Variables:
+        TABLE_NAME: !Ref DonationsTable
+        BUCKET_NAME: !Ref DonorStorageBucket
+
+Resources:
+  # 1. Private S3 Storage Bucket
+  DonorStorageBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub "sehatkosh-donor-storage-${AWS::AccountId}"
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      CorsConfiguration:
+        CorsRules:
+          - AllowedHeaders: ['*']
+            AllowedMethods: ['PUT', 'GET', 'HEAD']
+            AllowedOrigins: ['*']
+            MaxAge: 3600
+      LifecycleConfiguration:
+        Rules:
+          - Id: ExpireRawIntakeBuffer
+            Prefix: raw-intake/
+            Status: Enabled
+            ExpirationInDays: 1
+
+  # 2. DynamoDB Metadata & Ledger Table
+  DonationsTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: sehatkosh-donations
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: PK
+          AttributeType: S
+      KeySchema:
+        - AttributeName: PK
+          KeyType: HASH
+
+  # 3. HTTP API Gateway v2
+  DonorHttpApi:
+    Type: AWS::Serverless::HttpApi
+    Properties:
+      CorsConfiguration:
+        AllowOrigins:
+          - '*'
+        AllowHeaders:
+          - Content-Type
+          - Authorization
+          - cloudfront-viewer-country
+          - cloudfront-viewer-city-name
+        AllowMethods:
+          - POST
+          - OPTIONS
+        MaxAge: 600
+
+  # 4. Lambda: Session & Pre-Signer
+  PreSignFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: services/
+      Handler: pre_sign.handler
+      Policies:
+        - S3CrudPolicy:
+            BucketName: !Sub "sehatkosh-donor-storage-${AWS::AccountId}"
+        - DynamoDBCrudPolicy:
+            TableName: !Ref DonationsTable
+      Events:
+        SessionRoute:
+          Type: HttpApi
+          Properties:
+            Path: /session
+            Method: post
+            ApiId: !Ref DonorHttpApi
+
+  # 5. Lambda: Commit & Sanitize
+  SanitizeFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: services/
+      Handler: sanitize.handler
+      Policies:
+        - S3CrudPolicy:
+            BucketName: !Sub "sehatkosh-donor-storage-${AWS::AccountId}"
+        - DynamoDBCrudPolicy:
+            TableName: !Ref DonationsTable
+      Events:
+        CommitRoute:
+          Type: HttpApi
+          Properties:
+            Path: /commit
+            Method: post
+            ApiId: !Ref DonorHttpApi
+
+Outputs:
+  HttpApiEndpoint:
+    Description: HTTP API Gateway endpoint URL for SehatKosh Donor Web
+    Value: !Sub "https://${DonorHttpApi}.execute-api.${AWS::Region}.amazonaws.com"
+  StorageBucketName:
+    Description: S3 Intake & Archive Bucket
+    Value: !Ref DonorStorageBucket
+  DynamoTableName:
+    Description: DynamoDB Donations Table
+    Value: !Ref DonationsTable
