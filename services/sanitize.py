@@ -43,6 +43,51 @@ def scrub_pii(raw_text: str) -> str:
     sanitized_body = text.strip()
     return f"<donor_transcription>\n{sanitized_body}\n</donor_transcription>"
 
+def resolve_geo_location(norm_headers: dict, source_ip: str = "") -> tuple:
+    """
+    Resolves country and city using edge headers (CloudFront / Cloudflare)
+    with an automated fallback for direct requests.
+    Returns (country, city, ip_fingerprint).
+    """
+    raw_ip = norm_headers.get('x-forwarded-for', '').split(',')[0].strip()
+    if not raw_ip and source_ip:
+        raw_ip = source_ip.strip()
+
+    ip_hash = hashlib.sha256(raw_ip.encode()).hexdigest()[:16] if raw_ip else 'ANONYMOUS'
+
+    # 1. CloudFront edge headers
+    country = norm_headers.get('cloudfront-viewer-country-name') or norm_headers.get('cloudfront-viewer-country')
+    city = norm_headers.get('cloudfront-viewer-city-name')
+
+    # 2. Cloudflare edge headers
+    if not country or country == 'UNKNOWN':
+        country = norm_headers.get('cf-ipcountry')
+    if not city or city == 'UNKNOWN':
+        city = norm_headers.get('cf-ipcity')
+
+    # 3. Fallback IP lookup if headers are not present (e.g. direct API requests)
+    if (not city or city == 'UNKNOWN' or not country or country == 'UNKNOWN') and raw_ip:
+        if not (raw_ip.startswith('127.') or raw_ip.startswith('10.') or raw_ip.startswith('192.168.') or raw_ip == 'localhost'):
+            try:
+                import urllib.request
+                lookup_url = f"http://ip-api.com/json/{raw_ip}?fields=status,country,countryCode,city"
+                req = urllib.request.Request(lookup_url, headers={'User-Agent': 'SehatKosh-Geo/1.0'})
+                with urllib.request.urlopen(req, timeout=1.5) as resp:
+                    if resp.status == 200:
+                        geo_data = json.loads(resp.read().decode('utf-8'))
+                        if geo_data.get('status') == 'success':
+                            if not country or country == 'UNKNOWN':
+                                country = geo_data.get('country') or geo_data.get('countryCode', country)
+                            if not city or city == 'UNKNOWN':
+                                city = geo_data.get('city', city)
+            except Exception:
+                pass
+
+    final_country = country if country and country != 'UNKNOWN' else 'UNKNOWN'
+    final_city = city if city and city != 'UNKNOWN' else 'UNKNOWN'
+
+    return final_country, final_city, ip_hash
+
 def handler(event, context):
     cors_headers = {
         'Content-Type': 'application/json',
@@ -86,11 +131,9 @@ def handler(event, context):
                 'body': json.dumps({'error': 'Transcription exceeds maximum limit of 4000 characters'})
             }
 
-        # Extract CloudFront Geo and edge metadata
-        country = norm_headers.get('cloudfront-viewer-country', 'UNKNOWN')
-        city = norm_headers.get('cloudfront-viewer-city-name', 'UNKNOWN')
-        raw_ip = norm_headers.get('x-forwarded-for', '').split(',')[0].strip()
-        ip_hash = hashlib.sha256(raw_ip.encode()).hexdigest()[:16] if raw_ip else 'ANONYMOUS'
+        # Extract Geo location and edge metadata
+        source_ip = event.get('requestContext', {}).get('http', {}).get('sourceIp', '')
+        country, city, ip_hash = resolve_geo_location(norm_headers, source_ip)
 
         bucket_name = os.environ.get('BUCKET_NAME', 'sehatkosh-donor-storage')
         raw_key = f"raw-intake/{donation_id}.tmp"
