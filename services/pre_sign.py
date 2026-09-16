@@ -8,7 +8,13 @@ from botocore.config import Config
 ALLOWED_MIME_TYPES = {'image/jpeg', 'image/png', 'image/webp'}
 
 def get_s3_client():
-    return boto3.client('s3', config=Config(signature_version='s3v4'))
+    region = os.environ.get('AWS_REGION', 'ap-south-1')
+    return boto3.client(
+        's3',
+        region_name=region,
+        endpoint_url=f"https://s3.{region}.amazonaws.com",
+        config=Config(signature_version='s3v4', s3={'addressing_style': 'virtual'})
+    )
 
 def get_dynamo_table():
     dynamodb = boto3.resource('dynamodb')

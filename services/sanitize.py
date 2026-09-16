@@ -14,7 +14,8 @@ MAGIC_NUMBERS = {
 }
 
 def get_s3_client():
-    return boto3.client('s3')
+    region = os.environ.get('AWS_REGION', 'ap-south-1')
+    return boto3.client('s3', region_name=region)
 
 def get_dynamo_table():
     dynamodb = boto3.resource('dynamodb')
