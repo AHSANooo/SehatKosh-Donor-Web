@@ -42,5 +42,29 @@ class TestLambdaServices(unittest.TestCase):
         self.assertTrue(sanitized.startswith("<donor_transcription>"))
         self.assertTrue(sanitized.endswith("</donor_transcription>"))
 
+    def test_geo_location_edge_headers(self):
+        from services.sanitize import resolve_geo_location
+        # 1. CloudFront headers test
+        cf_headers = {
+            'cloudfront-viewer-country': 'PK',
+            'cloudfront-viewer-city-name': 'Lahore',
+            'x-forwarded-for': '182.180.100.5'
+        }
+        country, city, ip_hash = resolve_geo_location(cf_headers)
+        self.assertEqual(country, 'PK')
+        self.assertEqual(city, 'Lahore')
+        self.assertNotEqual(ip_hash, 'ANONYMOUS')
+        self.assertEqual(len(ip_hash), 16)
+
+        # 2. Cloudflare headers test
+        cf_flare_headers = {
+            'cf-ipcountry': 'PK',
+            'cf-ipcity': 'Islamabad',
+            'x-forwarded-for': '119.160.10.2'
+        }
+        country2, city2, ip_hash2 = resolve_geo_location(cf_flare_headers)
+        self.assertEqual(country2, 'PK')
+        self.assertEqual(city2, 'Islamabad')
+
 if __name__ == '__main__':
     unittest.main()
