@@ -1,2 +1,7 @@
 node_modules
-__pycache__
+dist
+.env.local
+.env.production
+__pycache__/
+*.pyc
+.DS_Store

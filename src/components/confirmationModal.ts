@@ -10,13 +10,13 @@ export function showConfirmationModal(donationId: string, isOffline: boolean = f
 
   if (isOffline) {
     badgeDisplay.className =
-      'inline-flex items-center px-2.5 py-1 rounded-full text-xs font-mono font-medium bg-amber-500/10 text-amber-400 border border-amber-500/30';
+      'inline-flex items-center px-2.5 py-1 rounded-full text-xs font-mono font-medium bg-amber-50 text-amber-800 border border-amber-200';
     badgeDisplay.textContent = 'QUEUED FOR SYNC';
     noteDisplay.textContent =
       'Prescription saved securely in local storage. It will be uploaded automatically once connection is restored.';
   } else {
     badgeDisplay.className =
-      'inline-flex items-center px-2.5 py-1 rounded-full text-xs font-mono font-medium bg-emerald-500/10 text-emerald-400 border border-emerald-500/30';
+      'inline-flex items-center px-2.5 py-1 rounded-full text-xs font-mono font-medium bg-emerald-50 text-emerald-800 border border-emerald-200';
     badgeDisplay.textContent = 'VERIFIED & ARCHIVED';
     noteDisplay.textContent =
       'Prescription de-identified, normalized to WebP, and committed to the research corpus.';

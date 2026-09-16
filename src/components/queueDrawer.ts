@@ -10,8 +10,8 @@ export function renderQueueDrawer(): void {
   getQueue().then((items) => {
     if (items.length === 0) {
       container.innerHTML = `
-        <div class="py-8 text-center text-slate-500 text-xs font-mono">
-          <svg class="w-8 h-8 mx-auto mb-2 text-slate-600 opacity-60" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <div class="py-8 text-center text-slate-400 text-xs font-mono">
+          <svg class="w-8 h-8 mx-auto mb-2 text-slate-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M5 13l4 4L19 7" />
           </svg>
           No pending offline donations.
@@ -23,15 +23,15 @@ export function renderQueueDrawer(): void {
     container.innerHTML = items
       .map(
         (item) => `
-      <div class="p-3 bg-slate-900/80 border border-slate-800 rounded-lg space-y-2 text-xs">
+      <div class="p-3 bg-slate-50 border border-slate-200 rounded-xl space-y-2 text-xs">
         <div class="flex items-center justify-between">
-          <span class="font-mono text-emerald-400 font-semibold text-[11px]">${item.localId}</span>
-          <span class="text-[10px] text-slate-400 font-mono">${new Date(item.timestamp).toLocaleTimeString()}</span>
+          <span class="font-mono text-emerald-700 font-semibold text-[11px]">${item.localId}</span>
+          <span class="text-[10px] text-slate-500 font-mono">${new Date(item.timestamp).toLocaleTimeString()}</span>
         </div>
-        <p class="text-slate-300 line-clamp-2 italic text-[11px]">"${item.transcription}"</p>
-        <div class="flex items-center justify-between pt-1 border-t border-slate-800/80 text-[10px] text-slate-400">
+        <p class="text-slate-700 line-clamp-2 italic text-[11px]">"${item.transcription}"</p>
+        <div class="flex items-center justify-between pt-1 border-t border-slate-200 text-[10px] text-slate-500">
           <span>Retries: ${item.retryCount} ${item.lastError ? `(${item.lastError})` : ''}</span>
-          <button data-id="${item.localId}" class="remove-queue-btn text-red-400 hover:text-red-300 px-2 py-0.5 rounded bg-red-950/40 border border-red-800/50">
+          <button data-id="${item.localId}" class="remove-queue-btn text-rose-600 hover:text-rose-700 px-2.5 py-0.5 rounded-md bg-rose-50 border border-rose-200 transition font-mono touch-manipulation">
             Remove
           </button>
         </div>

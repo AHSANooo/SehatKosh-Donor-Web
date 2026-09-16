@@ -44,8 +44,8 @@ function showAlert(message: string, isError: boolean = true) {
   if (!alertBanner || !alertMessage) return;
   alertMessage.textContent = message;
   alertBanner.className = isError
-    ? 'p-3 rounded-lg border border-red-500/40 bg-red-950/40 text-red-300 text-xs flex items-center justify-between transition'
-    : 'p-3 rounded-lg border border-emerald-500/40 bg-emerald-950/40 text-emerald-300 text-xs flex items-center justify-between transition';
+    ? 'p-3 rounded-xl border border-rose-200 bg-rose-50 text-rose-800 text-xs flex items-center justify-between shadow-xs transition'
+    : 'p-3 rounded-xl border border-emerald-200 bg-emerald-50 text-emerald-800 text-xs flex items-center justify-between shadow-xs transition';
   alertBanner.classList.remove('hidden');
 }
 
@@ -59,34 +59,40 @@ function updateNetworkStatus() {
 
   if (isOnline) {
     networkPill.className =
-      'text-xs px-2.5 py-0.5 rounded-full border border-emerald-500/30 text-emerald-400 bg-emerald-500/10 font-mono flex items-center gap-1.5 cursor-pointer';
-    networkPill.innerHTML = `<span class="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span> ONLINE`;
+      'text-xs px-2.5 py-1 rounded-full border border-emerald-200 text-emerald-800 bg-emerald-50 font-mono flex items-center gap-1.5 transition cursor-default';
+    networkPill.innerHTML = `<span class="w-1.5 h-1.5 rounded-full bg-emerald-600 animate-pulse"></span> ONLINE`;
   } else {
     networkPill.className =
-      'text-xs px-2.5 py-0.5 rounded-full border border-amber-500/30 text-amber-400 bg-amber-500/10 font-mono flex items-center gap-1.5 cursor-pointer';
+      'text-xs px-2.5 py-1 rounded-full border border-amber-300 text-amber-800 bg-amber-50 font-mono flex items-center gap-1.5 transition cursor-default';
     networkPill.innerHTML = `<span class="w-1.5 h-1.5 rounded-full bg-amber-500"></span> OFFLINE`;
   }
+
+  validateForm();
 }
 
 function validateForm(): boolean {
   const hasImage = selectedFile !== null;
-  const textLength = transcriptionInput ? transcriptionInput.value.trim().length : 0;
+  const rawText = transcriptionInput ? transcriptionInput.value.trim() : '';
+  const textLength = rawText.length;
   const isTextValid = textLength >= 10 && textLength <= 4000;
 
   const isValid = hasImage && isTextValid;
 
   if (submitBtn && currentState !== 'UPLOADING') {
     submitBtn.disabled = !isValid;
-    if (!hasImage && textLength < 10) {
-      submitBtn.innerHTML = `<span>Upload scan & enter transcription (min 10 chars)</span>`;
-    } else if (!hasImage) {
-      submitBtn.innerHTML = `<span>Capture or attach prescription image</span>`;
-    } else if (textLength < 10) {
-      submitBtn.innerHTML = `<span>Enter at least ${10 - textLength} more character(s)</span>`;
+
+    if (!isValid) {
+      if (!hasImage && textLength < 10) {
+        submitBtn.innerHTML = `<span>Upload (Min 10 chars)</span>`;
+      } else if (!hasImage) {
+        submitBtn.innerHTML = `<span>Upload (Select image)</span>`;
+      } else if (textLength === 0) {
+        submitBtn.innerHTML = `<span>Upload (Min 10 chars)</span>`;
+      } else {
+        submitBtn.innerHTML = `<span>Upload (${10 - textLength} more chars needed)</span>`;
+      }
     } else {
-      submitBtn.innerHTML = navigator.onLine
-        ? `<span>Submit Contribution</span>`
-        : `<span>Save Offline (Queued)</span>`;
+      submitBtn.innerHTML = `<span>Upload</span>`;
     }
   }
 
@@ -157,6 +163,7 @@ function handleFileSelection(file: File) {
 
   if (imageMetaBadge) {
     imageMetaBadge.textContent = `${file.name} (${formattedSize})`;
+    imageMetaBadge.className = 'text-[10px] font-mono text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-md';
     imageMetaBadge.classList.remove('hidden');
   }
 
@@ -180,7 +187,10 @@ function clearImage() {
 function resetForm() {
   clearImage();
   if (transcriptionInput) transcriptionInput.value = '';
-  if (charCounter) charCounter.textContent = '0 / 4000';
+  if (charCounter) {
+    charCounter.textContent = '0 / 4000 (Min 10)';
+    charCounter.className = 'text-[10px] font-mono text-slate-500';
+  }
   if (piiBadge) piiBadge.classList.add('hidden');
   hideAlert();
   setAppState('IDLE');
@@ -191,8 +201,16 @@ document.addEventListener('DOMContentLoaded', () => {
   initOfflineSync();
   updateNetworkStatus();
 
-  window.addEventListener('online', updateNetworkStatus);
-  window.addEventListener('offline', updateNetworkStatus);
+  window.addEventListener('online', () => {
+    updateNetworkStatus();
+    showAlert('Connection restored. Online sync active.', false);
+    setTimeout(hideAlert, 4000);
+  });
+
+  window.addEventListener('offline', () => {
+    updateNetworkStatus();
+    showAlert('You are offline. Contributions will be safely stored in the local queue.', true);
+  });
 
   // Subscribe to offline queue count
   subscribeToQueue((count) => {
@@ -223,14 +241,14 @@ document.addEventListener('DOMContentLoaded', () => {
     ['dragenter', 'dragover'].forEach((eventName) => {
       dropZone.addEventListener(eventName, (e) => {
         e.preventDefault();
-        dropZone.classList.add('border-emerald-500', 'bg-emerald-950/20');
+        dropZone.classList.add('border-emerald-500', 'bg-emerald-50/40');
       });
     });
 
     ['dragleave', 'drop'].forEach((eventName) => {
       dropZone.addEventListener(eventName, (e) => {
         e.preventDefault();
-        dropZone.classList.remove('border-emerald-500', 'bg-emerald-950/20');
+        dropZone.classList.remove('border-emerald-500', 'bg-emerald-50/40');
       });
     });
 
@@ -267,13 +285,13 @@ document.addEventListener('DOMContentLoaded', () => {
   // Transcription real-time input validation & PII shield analysis
   if (transcriptionInput) {
     transcriptionInput.addEventListener('input', () => {
-      const length = transcriptionInput.value.length;
+      const length = transcriptionInput.value.trim().length;
       if (charCounter) {
-        charCounter.textContent = `${length} / 4000`;
+        charCounter.textContent = `${length} / 4000 (Min 10)`;
         if (length < 10) {
-          charCounter.className = 'text-[10px] font-mono text-amber-500';
+          charCounter.className = 'text-[10px] font-mono text-amber-600 font-medium';
         } else {
-          charCounter.className = 'text-[10px] font-mono text-slate-400';
+          charCounter.className = 'text-[10px] font-mono text-slate-500';
         }
       }
 
@@ -281,7 +299,8 @@ document.addEventListener('DOMContentLoaded', () => {
       const pii = analyzePii(transcriptionInput.value);
       if (piiBadge) {
         if (pii.hasPii) {
-          piiBadge.textContent = `Shield Active: ${pii.totalMatches} PII indicator(s) will be scrubbed`;
+          piiBadge.textContent = `Shield Active: ${pii.totalMatches} PII indicator(s) scrubbed`;
+          piiBadge.className = 'absolute bottom-2.5 right-2.5 text-[10px] font-mono bg-emerald-50 text-emerald-800 border border-emerald-200 px-2 py-0.5 rounded-md shadow-2xs';
           piiBadge.classList.remove('hidden');
         } else {
           piiBadge.classList.add('hidden');
@@ -350,7 +369,7 @@ document.addEventListener('DOMContentLoaded', () => {
         resetForm();
       } catch (err: any) {
         console.error('Submission failed:', err);
-        // On failure, offer to save to offline queue
+        // On network failure, automatically save to offline queue
         try {
           const queued = await enqueueDonation({
             imageBlob: fileToUpload,
@@ -358,11 +377,12 @@ document.addEventListener('DOMContentLoaded', () => {
             mimeType: fileToUpload.type,
             transcription: transcriptionText,
           });
+          showConfirmationModal(queued.localId, true);
           showAlert(
-            `Network upload interrupted (${err.message}). Record has been automatically saved to your offline queue (${queued.localId}).`,
+            `Network upload interrupted (${err.message}). Saved securely to your offline queue (${queued.localId}).`,
             true
           );
-          setAppState('DRAFTING');
+          resetForm();
         } catch (queueErr) {
           showAlert(`Submission failed: ${err.message}`);
           setAppState('DRAFTING');
