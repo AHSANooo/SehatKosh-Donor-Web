@@ -11,19 +11,20 @@
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="/src/style.css">
 </head>
-<body class="bg-slate-50 text-slate-900 min-h-[100dvh] flex flex-col font-sans antialiased selection:bg-emerald-100 selection:text-emerald-900 pb-[env(safe-area-inset-bottom)]">
+<body class="bg-slate-100 text-slate-900 min-h-[100dvh] flex flex-col font-sans antialiased selection:bg-emerald-100 selection:text-emerald-900 pb-[env(safe-area-inset-bottom)]">
 
-  <!-- Clinical Header -->
-  <header class="border-b border-slate-200/90 px-4 py-3 flex items-center justify-between bg-white/95 backdrop-blur sticky top-0 z-30 shadow-xs">
+  <!-- Clinical Header with Emerald Accent Line -->
+  <header class="border-t-[3px] border-t-emerald-600 border-b border-slate-200/90 px-4 sm:px-6 py-3 flex items-center justify-between bg-white shadow-xs sticky top-0 z-30">
     <div class="flex items-center space-x-2.5">
-      <div class="relative flex items-center justify-center">
-        <div class="h-2.5 w-2.5 rounded-full bg-emerald-600"></div>
-        <div class="h-2.5 w-2.5 rounded-full bg-emerald-500 animate-ping absolute opacity-60"></div>
+      <div class="h-8 w-8 rounded-lg bg-emerald-50 border border-emerald-200 flex items-center justify-center text-emerald-700 shadow-2xs">
+        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.2" d="M12 4v16m8-8H4" />
+        </svg>
       </div>
       <div>
         <h1 class="font-bold tracking-tight text-xs md:text-sm text-slate-900 font-mono flex items-center gap-1.5">
           <span class="tracking-wide">SEHATKOSH</span>
-          <span class="text-slate-400 font-normal">//</span>
+          <span class="text-slate-300 font-normal">/</span>
           <span class="text-emerald-700 font-semibold">DONOR DESK</span>
         </h1>
       </div>
@@ -31,46 +32,47 @@
     <div class="flex items-center space-x-2">
       <button 
         id="queue-pill-btn" 
-        class="text-xs px-2.5 py-1 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 font-mono flex items-center gap-1.5 transition shadow-2xs active:scale-95 touch-manipulation"
+        class="text-xs px-2.5 py-1 rounded-lg border border-slate-200 bg-slate-50 hover:bg-slate-100 text-slate-700 font-mono flex items-center gap-1.5 transition shadow-2xs active:scale-95 touch-manipulation font-medium"
         title="View Offline Queue"
         type="button"
       >
         <span>Queue</span>
         <span id="queue-count-badge" class="hidden px-1.5 py-0.2 bg-amber-500 text-white text-[10px] font-bold rounded-full">0</span>
       </button>
-      <div id="network-pill" class="text-xs px-2.5 py-1 rounded-full border border-emerald-200 text-emerald-800 bg-emerald-50 font-mono flex items-center gap-1.5 transition cursor-default">
+      <div id="network-pill" class="text-xs px-2.5 py-1 rounded-full border border-emerald-200 text-emerald-800 bg-emerald-50 font-mono flex items-center gap-1.5 transition shadow-2xs cursor-default font-medium">
         <span class="w-1.5 h-1.5 rounded-full bg-emerald-600 animate-pulse"></span> ONLINE
       </div>
     </div>
   </header>
 
   <!-- Notification Banner -->
-  <div id="alert-banner" class="hidden mx-4 mt-3 max-w-lg md:mx-auto w-auto">
+  <div id="alert-banner" class="hidden mx-4 mt-3 max-w-xl md:mx-auto w-auto">
     <div class="flex items-center justify-between w-full">
       <span id="alert-message" class="font-medium text-xs leading-relaxed"></span>
       <button id="close-alert-btn" class="text-slate-400 hover:text-slate-700 text-base ml-2 font-bold p-1 leading-none">&times;</button>
     </div>
   </div>
 
-  <!-- Main Viewport -->
-  <main class="flex-1 w-full max-w-lg mx-auto p-4 flex flex-col justify-between">
-    <form id="donation-form" class="space-y-4 flex-1 flex flex-col justify-between">
-      
-      <div class="space-y-4">
+  <!-- Main Viewport (Centered, Elevated Clinical Card) -->
+  <main class="flex-1 w-full max-w-xl mx-auto px-4 py-5 sm:py-8 flex flex-col justify-center">
+    <div class="bg-white rounded-2xl border border-slate-200/90 shadow-sm shadow-slate-200/70 p-5 sm:p-7 transition-all">
+      <form id="donation-form" class="space-y-5 flex flex-col">
+        
         <!-- 01. Prescription Document Upload -->
         <div>
           <div class="flex items-center justify-between mb-1.5">
-            <label class="block text-xs font-mono uppercase tracking-wider text-slate-700 font-semibold">
-              01. Prescription Document
+            <label class="text-xs font-mono uppercase tracking-wider text-slate-700 font-semibold flex items-center gap-1.5">
+              <span class="w-4 h-4 rounded bg-slate-100 border border-slate-200 text-slate-600 inline-flex items-center justify-center text-[10px] font-bold">1</span>
+              <span>Prescription Document</span>
             </label>
-            <span id="image-meta-badge" class="hidden text-[10px] font-mono text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-md">
+            <span id="image-meta-badge" class="hidden text-[10px] font-mono text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-md font-medium">
               Ready
             </span>
           </div>
 
           <div 
             id="drop-zone" 
-            class="border-2 border-dashed border-slate-300 hover:border-emerald-500 rounded-xl p-4 text-center cursor-pointer transition-all duration-200 bg-white hover:bg-emerald-50/20 flex flex-col items-center justify-center min-h-[160px] relative overflow-hidden group shadow-xs"
+            class="border-2 border-dashed border-slate-300 hover:border-emerald-500 rounded-xl p-4 text-center cursor-pointer transition-all duration-200 bg-slate-50/70 hover:bg-emerald-50/20 flex flex-col items-center justify-center min-h-[160px] relative overflow-hidden group shadow-2xs"
           >
             <!-- Native Camera & File Input -->
             <input 
@@ -95,8 +97,8 @@
 
             <!-- Upload Prompt -->
             <div id="upload-prompt" class="space-y-2 py-2">
-              <div class="w-12 h-12 rounded-full bg-slate-100 flex items-center justify-center mx-auto border border-slate-200 group-hover:border-emerald-300 group-hover:bg-emerald-50/50 group-hover:scale-105 transition">
-                <svg class="w-6 h-6 text-slate-500 group-hover:text-emerald-600 transition" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <div class="w-12 h-12 rounded-full bg-white shadow-xs border border-slate-200 flex items-center justify-center mx-auto text-slate-500 group-hover:text-emerald-600 group-hover:border-emerald-300 group-hover:scale-105 transition">
+                <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z" />
                   <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M15 13a3 3 0 11-6 0 3 3 0 016 0z" />
                 </svg>
@@ -110,26 +112,27 @@
         </div>
 
         <!-- 02. Clinical Text Transcription -->
-        <div class="flex-1 flex flex-col space-y-1.5">
+        <div class="space-y-1.5">
           <div class="flex items-center justify-between">
-            <label class="block text-xs font-mono uppercase tracking-wider text-slate-700 font-semibold">
-              02. Clinical Text Transcription
+            <label class="text-xs font-mono uppercase tracking-wider text-slate-700 font-semibold flex items-center gap-1.5">
+              <span class="w-4 h-4 rounded bg-slate-100 border border-slate-200 text-slate-600 inline-flex items-center justify-center text-[10px] font-bold">2</span>
+              <span>Clinical Text Transcription</span>
             </label>
-            <span id="char-counter" class="text-[10px] font-mono text-slate-500">0 / 4000 (Min 10)</span>
+            <span id="char-counter" class="text-[10px] font-mono text-slate-500 font-medium">0 / 4000 (Min 10)</span>
           </div>
 
           <!-- Quick Clinical Tags -->
           <div class="flex flex-wrap gap-1.5 py-0.5">
-            <button type="button" data-tag="Tab." class="clinical-chip text-[10px] font-mono px-2.5 py-1 rounded-md bg-white hover:bg-slate-100 text-slate-700 border border-slate-200 transition shadow-2xs touch-manipulation">+ Tab.</button>
-            <button type="button" data-tag="Cap." class="clinical-chip text-[10px] font-mono px-2.5 py-1 rounded-md bg-white hover:bg-slate-100 text-slate-700 border border-slate-200 transition shadow-2xs touch-manipulation">+ Cap.</button>
-            <button type="button" data-tag="Syp." class="clinical-chip text-[10px] font-mono px-2.5 py-1 rounded-md bg-white hover:bg-slate-100 text-slate-700 border border-slate-200 transition shadow-2xs touch-manipulation">+ Syp.</button>
-            <button type="button" data-tag="OD (Once daily)" class="clinical-chip text-[10px] font-mono px-2.5 py-1 rounded-md bg-white hover:bg-slate-100 text-slate-700 border border-slate-200 transition shadow-2xs touch-manipulation">+ OD</button>
-            <button type="button" data-tag="BD (Twice daily)" class="clinical-chip text-[10px] font-mono px-2.5 py-1 rounded-md bg-white hover:bg-slate-100 text-slate-700 border border-slate-200 transition shadow-2xs touch-manipulation">+ BD</button>
-            <button type="button" data-tag="TDS (Thrice daily)" class="clinical-chip text-[10px] font-mono px-2.5 py-1 rounded-md bg-white hover:bg-slate-100 text-slate-700 border border-slate-200 transition shadow-2xs touch-manipulation">+ TDS</button>
-            <button type="button" data-tag="SOS" class="clinical-chip text-[10px] font-mono px-2.5 py-1 rounded-md bg-white hover:bg-slate-100 text-slate-700 border border-slate-200 transition shadow-2xs touch-manipulation">+ SOS</button>
+            <button type="button" data-tag="Tab." class="clinical-chip text-[11px] font-mono px-2.5 py-1 rounded-md bg-slate-100 hover:bg-slate-200/80 text-slate-700 border border-slate-200 transition shadow-2xs touch-manipulation">+ Tab.</button>
+            <button type="button" data-tag="Cap." class="clinical-chip text-[11px] font-mono px-2.5 py-1 rounded-md bg-slate-100 hover:bg-slate-200/80 text-slate-700 border border-slate-200 transition shadow-2xs touch-manipulation">+ Cap.</button>
+            <button type="button" data-tag="Syp." class="clinical-chip text-[11px] font-mono px-2.5 py-1 rounded-md bg-slate-100 hover:bg-slate-200/80 text-slate-700 border border-slate-200 transition shadow-2xs touch-manipulation">+ Syp.</button>
+            <button type="button" data-tag="OD (Once daily)" class="clinical-chip text-[11px] font-mono px-2.5 py-1 rounded-md bg-slate-100 hover:bg-slate-200/80 text-slate-700 border border-slate-200 transition shadow-2xs touch-manipulation">+ OD</button>
+            <button type="button" data-tag="BD (Twice daily)" class="clinical-chip text-[11px] font-mono px-2.5 py-1 rounded-md bg-slate-100 hover:bg-slate-200/80 text-slate-700 border border-slate-200 transition shadow-2xs touch-manipulation">+ BD</button>
+            <button type="button" data-tag="TDS (Thrice daily)" class="clinical-chip text-[11px] font-mono px-2.5 py-1 rounded-md bg-slate-100 hover:bg-slate-200/80 text-slate-700 border border-slate-200 transition shadow-2xs touch-manipulation">+ TDS</button>
+            <button type="button" data-tag="SOS" class="clinical-chip text-[11px] font-mono px-2.5 py-1 rounded-md bg-slate-100 hover:bg-slate-200/80 text-slate-700 border border-slate-200 transition shadow-2xs touch-manipulation">+ SOS</button>
           </div>
 
-          <div class="relative rounded-xl border border-slate-300 bg-white focus-within:border-emerald-600 focus-within:ring-2 focus-within:ring-emerald-600/15 transition shadow-2xs">
+          <div class="relative rounded-xl border border-slate-300 bg-slate-50/40 focus-within:bg-white focus-within:border-emerald-600 focus-within:ring-2 focus-within:ring-emerald-600/15 transition-all shadow-2xs">
             <textarea 
               id="transcription-input" 
               maxlength="4000" 
@@ -143,38 +146,38 @@
             </div>
           </div>
         </div>
-      </div>
 
-      <!-- Action Footer -->
-      <div class="pt-3 space-y-2">
-        <!-- Progress Bar -->
-        <div id="upload-progress-bar" class="hidden space-y-1">
-          <div class="flex justify-between text-[11px] font-mono text-emerald-700">
-            <span id="upload-status-text">Uploading...</span>
+        <!-- Action Footer -->
+        <div class="pt-1 space-y-2">
+          <!-- Progress Bar -->
+          <div id="upload-progress-bar" class="hidden space-y-1">
+            <div class="flex justify-between text-[11px] font-mono text-emerald-700 font-medium">
+              <span id="upload-status-text">Uploading...</span>
+            </div>
+            <div class="w-full bg-slate-200 rounded-full h-1.5 overflow-hidden">
+              <div id="progress-fill" class="bg-emerald-600 h-full w-0 transition-all duration-200"></div>
+            </div>
           </div>
-          <div class="w-full bg-slate-200 rounded-full h-1.5 overflow-hidden">
-            <div id="progress-fill" class="bg-emerald-600 h-full w-0 transition-all duration-200"></div>
-          </div>
+
+          <button 
+            type="submit" 
+            id="submit-btn" 
+            disabled 
+            class="w-full min-h-[48px] bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 disabled:bg-slate-200 disabled:text-slate-400 disabled:cursor-not-allowed font-semibold text-xs tracking-wider uppercase rounded-xl transition duration-150 flex items-center justify-center space-x-2 text-white shadow-sm shadow-emerald-700/15 touch-manipulation"
+          >
+            <span>Upload</span>
+          </button>
         </div>
 
-        <button 
-          type="submit" 
-          id="submit-btn" 
-          disabled 
-          class="w-full min-h-[48px] bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 disabled:bg-slate-200 disabled:text-slate-400 disabled:cursor-not-allowed font-semibold text-xs tracking-wider uppercase rounded-xl transition duration-150 flex items-center justify-center space-x-2 text-white shadow-xs touch-manipulation"
-        >
-          <span>Upload</span>
-        </button>
-      </div>
-
-    </form>
+      </form>
+    </div>
   </main>
 
   <!-- Confirmation Modal -->
   <div id="confirmation-modal" class="hidden fixed inset-0 z-50 bg-slate-900/40 backdrop-blur-sm flex items-center justify-center p-4">
     <div class="bg-white border border-slate-200 rounded-2xl p-6 max-w-sm w-full space-y-5 shadow-2xl animate-in fade-in zoom-in-95 duration-150">
       <div class="text-center space-y-2">
-        <div class="w-12 h-12 bg-emerald-50 border border-emerald-200 rounded-full flex items-center justify-center mx-auto text-emerald-600">
+        <div class="w-12 h-12 bg-emerald-50 border border-emerald-200 rounded-full flex items-center justify-center mx-auto text-emerald-600 shadow-2xs">
           <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.2" d="M5 13l4 4L19 7" />
           </svg>
