@@ -10,7 +10,7 @@ Globals:
     MemorySize: 256
     Runtime: python3.11
     Architectures:
-      - arm64
+      - x86_64
     Environment:
       Variables:
         TABLE_NAME: !Ref DonationsTable
