@@ -6,3 +6,4 @@ __pycache__/
 *.pyc
 .DS_Store
 .aws-sam/
+sehatkosh_corpus/
