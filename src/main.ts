@@ -33,6 +33,7 @@ const progressFill = document.getElementById('progress-fill') as HTMLElement;
 const uploadStatusText = document.getElementById('upload-status-text') as HTMLElement;
 const submitBtn = document.getElementById('submit-btn') as HTMLButtonElement;
 const networkPill = document.getElementById('network-pill') as HTMLElement;
+const queuePillBtn = document.getElementById('queue-pill-btn') as HTMLElement;
 const queueCountBadge = document.getElementById('queue-count-badge') as HTMLElement;
 const alertBanner = document.getElementById('alert-banner') as HTMLElement;
 const alertMessage = document.getElementById('alert-message') as HTMLElement;
@@ -212,14 +213,16 @@ document.addEventListener('DOMContentLoaded', () => {
     showAlert('You are offline. Contributions will be safely stored in the local queue.', true);
   });
 
-  // Subscribe to offline queue count
+  // Subscribe to offline queue count (only show if there are pending donations)
   subscribeToQueue((count) => {
-    if (queueCountBadge) {
+    if (queuePillBtn) {
       if (count > 0) {
-        queueCountBadge.textContent = `${count}`;
-        queueCountBadge.classList.remove('hidden');
+        queuePillBtn.classList.remove('hidden');
+        if (queueCountBadge) {
+          queueCountBadge.textContent = `${count}`;
+        }
       } else {
-        queueCountBadge.classList.add('hidden');
+        queuePillBtn.classList.add('hidden');
       }
     }
   });

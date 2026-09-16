@@ -14,30 +14,24 @@
 <body class="bg-slate-100 text-slate-900 min-h-[100dvh] flex flex-col font-sans antialiased selection:bg-emerald-100 selection:text-emerald-900 pb-[env(safe-area-inset-bottom)]">
 
   <!-- Clinical Header with Emerald Accent Line -->
-  <header class="border-t-[3px] border-t-emerald-600 border-b border-slate-200/90 px-4 sm:px-6 py-3 flex items-center justify-between bg-white shadow-xs sticky top-0 z-30">
-    <div class="flex items-center space-x-2.5">
-      <div class="h-8 w-8 rounded-lg bg-emerald-50 border border-emerald-200 flex items-center justify-center text-emerald-700 shadow-2xs">
-        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.2" d="M12 4v16m8-8H4" />
-        </svg>
-      </div>
-      <div>
-        <h1 class="font-bold tracking-tight text-xs md:text-sm text-slate-900 font-mono flex items-center gap-1.5">
-          <span class="tracking-wide">SEHATKOSH</span>
-          <span class="text-slate-300 font-normal">/</span>
-          <span class="text-emerald-700 font-semibold">DONOR DESK</span>
-        </h1>
-      </div>
+  <header class="border-t-[3px] border-t-emerald-600 border-b border-slate-200/90 px-4 sm:px-6 py-3.5 flex items-center justify-between bg-white shadow-xs sticky top-0 z-30">
+    <div class="flex items-center space-x-2">
+      <div class="w-2 h-2 rounded-full bg-emerald-600"></div>
+      <h1 class="font-bold tracking-tight text-xs md:text-sm text-slate-900 font-mono flex items-center gap-1.5">
+        <span class="tracking-wide">SEHATKOSH</span>
+        <span class="text-slate-300 font-normal">/</span>
+        <span class="text-emerald-700 font-semibold">DONOR DESK</span>
+      </h1>
     </div>
     <div class="flex items-center space-x-2">
       <button 
         id="queue-pill-btn" 
-        class="text-xs px-2.5 py-1 rounded-lg border border-slate-200 bg-slate-50 hover:bg-slate-100 text-slate-700 font-mono flex items-center gap-1.5 transition shadow-2xs active:scale-95 touch-manipulation font-medium"
-        title="View Offline Queue"
+        class="hidden text-xs px-2.5 py-1 rounded-lg border border-amber-200 bg-amber-50 hover:bg-amber-100 text-amber-900 font-mono flex items-center gap-1.5 transition shadow-2xs active:scale-95 touch-manipulation font-medium"
+        title="View Pending Offline Queue"
         type="button"
       >
-        <span>Queue</span>
-        <span id="queue-count-badge" class="hidden px-1.5 py-0.2 bg-amber-500 text-white text-[10px] font-bold rounded-full">0</span>
+        <span>Pending Queue</span>
+        <span id="queue-count-badge" class="px-1.5 py-0.2 bg-amber-500 text-white text-[10px] font-bold rounded-full">0</span>
       </button>
       <div id="network-pill" class="text-xs px-2.5 py-1 rounded-full border border-emerald-200 text-emerald-800 bg-emerald-50 font-mono flex items-center gap-1.5 transition shadow-2xs cursor-default font-medium">
         <span class="w-1.5 h-1.5 rounded-full bg-emerald-600 animate-pulse"></span> ONLINE
