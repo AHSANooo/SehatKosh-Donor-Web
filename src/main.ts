@@ -382,7 +382,7 @@ document.addEventListener('DOMContentLoaded', () => {
           });
           showConfirmationModal(queued.localId, true);
           showAlert(
-            `Network upload interrupted (${err.message}). Saved securely to your offline queue (${queued.localId}).`,
+            `Network upload interrupted (${err.message}). Saved securely to your offline queue.`,
             true
           );
           resetForm();

@@ -22,10 +22,10 @@ export function renderQueueDrawer(): void {
 
     container.innerHTML = items
       .map(
-        (item) => `
+        (item, index) => `
       <div class="p-3 bg-slate-50 border border-slate-200 rounded-xl space-y-2 text-xs">
         <div class="flex items-center justify-between">
-          <span class="font-mono text-emerald-700 font-semibold text-[11px]">${item.localId}</span>
+          <span class="font-mono text-emerald-700 font-semibold text-[11px]">Pending Contribution #${index + 1}</span>
           <span class="text-[10px] text-slate-500 font-mono">${new Date(item.timestamp).toLocaleTimeString()}</span>
         </div>
         <p class="text-slate-700 line-clamp-2 italic text-[11px]">"${item.transcription}"</p>

@@ -92,6 +92,9 @@ The user interface was purposefully designed to look like a clean, modern clinic
 * **Upload Button Dynamic Feedback**:
   - The submit button is strictly labeled `"Upload"` when requirements are satisfied.
   - If the transcription character requirement (< 10 characters) is not met, the button dynamically indicates the deficit: `Upload (need X more)`.
+* **Clean Confirmation Dialog**:
+  - Removed technical internal identifiers (`01JC...` ULIDs) and the unnecessary "Copy Receipt ID" button.
+  - Presents a clean, welcoming confirmation showing an archived status badge and a direct action to donate another prescription.
 * **Mobile-First Touch Ergonomics**:
   - 48px minimum touch targets.
   - Safe-area inset handling (`min-h-[100dvh]`).
