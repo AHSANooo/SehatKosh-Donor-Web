@@ -32,7 +32,6 @@ const uploadProgressBar = document.getElementById('upload-progress-bar') as HTML
 const progressFill = document.getElementById('progress-fill') as HTMLElement;
 const uploadStatusText = document.getElementById('upload-status-text') as HTMLElement;
 const submitBtn = document.getElementById('submit-btn') as HTMLButtonElement;
-const networkPill = document.getElementById('network-pill') as HTMLElement;
 const queuePillBtn = document.getElementById('queue-pill-btn') as HTMLElement;
 const queueCountBadge = document.getElementById('queue-count-badge') as HTMLElement;
 const alertBanner = document.getElementById('alert-banner') as HTMLElement;
@@ -52,23 +51,6 @@ function showAlert(message: string, isError: boolean = true) {
 
 function hideAlert() {
   if (alertBanner) alertBanner.classList.add('hidden');
-}
-
-function updateNetworkStatus() {
-  const isOnline = navigator.onLine;
-  if (!networkPill) return;
-
-  if (isOnline) {
-    networkPill.className =
-      'text-xs px-2.5 py-1 rounded-full border border-emerald-200 text-emerald-800 bg-emerald-50 font-mono flex items-center gap-1.5 transition cursor-default';
-    networkPill.innerHTML = `<span class="w-1.5 h-1.5 rounded-full bg-emerald-600 animate-pulse"></span> ONLINE`;
-  } else {
-    networkPill.className =
-      'text-xs px-2.5 py-1 rounded-full border border-amber-300 text-amber-800 bg-amber-50 font-mono flex items-center gap-1.5 transition cursor-default';
-    networkPill.innerHTML = `<span class="w-1.5 h-1.5 rounded-full bg-amber-500"></span> OFFLINE`;
-  }
-
-  validateForm();
 }
 
 function validateForm(): boolean {
@@ -200,18 +182,7 @@ function resetForm() {
 // Initial setup
 document.addEventListener('DOMContentLoaded', () => {
   initOfflineSync();
-  updateNetworkStatus();
-
-  window.addEventListener('online', () => {
-    updateNetworkStatus();
-    showAlert('Connection restored. Online sync active.', false);
-    setTimeout(hideAlert, 4000);
-  });
-
-  window.addEventListener('offline', () => {
-    updateNetworkStatus();
-    showAlert('You are offline. Contributions will be safely stored in the local queue.', true);
-  });
+  validateForm();
 
   // Subscribe to offline queue count (only show if there are pending donations)
   subscribeToQueue((count) => {
