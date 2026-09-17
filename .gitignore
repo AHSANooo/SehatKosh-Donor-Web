@@ -1,9 +1,11 @@
 node_modules
 dist
-.env.local
-.env.production
 __pycache__/
 *.pyc
 .DS_Store
 .aws-sam/
 sehatkosh_corpus/
+branch_structure.json
+temp_auto_push.bat
+temp_interactive_push.bat
+config.bat
